@@ -139,6 +139,9 @@ def parse_iso(s: str | None) -> datetime | None:
 
 def clean_pg_url(url: str) -> str:
     """Vercel integrations append params psycopg doesn't understand (e.g. supa=...). Keep only known ones."""
+    if "[YOUR-PASSWORD]" in url:
+        raise ValueError("The database connection string still contains [YOUR-PASSWORD]. Replace it with your "
+                         "Supabase database password (Project Settings -> Database).")
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
     parts = urlsplit(url)
