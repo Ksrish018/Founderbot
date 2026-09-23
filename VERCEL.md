@@ -104,6 +104,30 @@ From now on the bot answers only Meera, and posting a note in the channel is all
 
 ---
 
+## Single-chat mode: everything in Meera's Content Capture
+
+By default, notes go in the channel and the bot talks to Meera in a private chat. To have everything in the
+channel instead, add this in Vercel and redeploy:
+
+| Key | Value |
+|---|---|
+| `REVIEW_CHAT_ID` | `-1003976391640` (the notes channel's ID) |
+
+Then, in **Meera's Content Capture**:
+
+| Meera posts | What happens |
+|---|---|
+| A normal message or voice note | Saved as a note, silently |
+| `/triage`, `/stats`, `/notes`, `/facts`, `/health`, `/help` | Runs the command; the bot answers in the channel |
+| A **reply** to a draft | Revises that draft, using the reply as the instruction |
+| A **reply** to a draft starting with `final` | Records what she actually posted |
+| A **reply** to one of the bot's questions (after tapping Revise, or in `/facts`) | Answers the question |
+| Taps a button (Draft this, Approve, …) | Only works for the account in `MEERA_USER_ID` |
+
+Shortlists and drafts appear in the channel between her notes. The bot trusts every post in the channel as
+Meera's, because only channel admins can post. Keep the channel's admins to Meera and the bot. To go back to the
+private chat, delete `REVIEW_CHAT_ID` and redeploy.
+
 ## How the schedule works on Vercel
 
 `vercel.json` defines two cron jobs (times are UTC):
