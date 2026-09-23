@@ -48,9 +48,7 @@ def cb_update(data: str, user_id: int = 42):
         return None
     q = SimpleNamespace(data=data, answer=noop, edit_message_reply_markup=noop, edit_message_text=noop,
                         message=SimpleNamespace(text="card"))
-    return SimpleNamespace(callback_query=q, effective_user=SimpleNamespace(id=user_id), message=None,
-                           effective_message=q.message, effective_chat=SimpleNamespace(id=user_id),
-                           channel_post=None, edited_channel_post=None)
+    return SimpleNamespace(callback_query=q, effective_user=SimpleNamespace(id=user_id), message=None)
 
 
 async def test_shortlist_then_draft_then_approve(ctx, db, fake):
@@ -97,10 +95,9 @@ async def test_approve_refused_with_placeholders_then_revise(ctx, db, fake):
     await tb.on_callback(cb_update(f"rv:{did}"), ctx)
     assert ctx.application.bot_data["state"].awaiting == ("revise", str(did))
     fake.queue("draft", draft_json(GOOD_POST))
-    m = SimpleNamespace(text="Our serum pH is 5.5-5.8", reply_to_message=None, reply_text=_async_noop)
-    msg_update = SimpleNamespace(effective_user=SimpleNamespace(id=42), callback_query=None, message=m,
-                                 effective_message=m, effective_chat=SimpleNamespace(id=42),
-                                 channel_post=None, edited_channel_post=None)
+    msg_update = SimpleNamespace(effective_user=SimpleNamespace(id=42), callback_query=None,
+                                 message=SimpleNamespace(text="Our serum pH is 5.5-5.8", reply_to_message=None,
+                                                         reply_text=_async_noop))
     await tb.on_text(msg_update, ctx)
     new = db.one("SELECT * FROM drafts ORDER BY id DESC LIMIT 1")
     assert new["parent_draft_id"] == did and new["revision_instruction"] == "Our serum pH is 5.5-5.8"
@@ -155,108 +152,3 @@ def test_split_text_respects_limit():
 
 async def _async_noop(*a, **k):
     return None
-
-
-# ---- single-chat mode: everything happens in the notes channel ------------------------------
-CHANNEL = -1003976391640
-
-
-@pytest.fixture
-def channel_ctx(db, fake, settings, monkeypatch):
-    async def no_news(db_, gemini, settings_, req, text):
-        db_.run("UPDATE draft_requests SET news_status='none', news_reason='No relevant item.', news_ranking='[]', "
-                "news_pos=-1 WHERE id=?", (req,))
-    monkeypatch.setattr(news, "find_angle", no_news)
-    captured = []
-
-    async def fake_capture(msg, db_, gemini, react=False):
-        captured.append(msg.text)
-    monkeypatch.setattr(tb.capture, "capture_message", fake_capture)
-    settings.review_chat_id = CHANNEL
-    assert settings.single_chat
-    state = tb.State(settings=settings, db=db, gemini=fake)
-    bot = FakeBot()
-    ctx = SimpleNamespace(application=SimpleNamespace(bot_data={"state": state}), bot=bot, args=[])
-    ctx.captured = captured
-    return ctx
-
-
-def channel_post(ctx, text, reply_to=None):
-    replies = []
-
-    async def reply_text(t, reply_markup=None):
-        replies.append(t)
-        return await ctx.bot.send_message(CHANNEL, t, reply_markup)
-    msg = SimpleNamespace(text=text, chat_id=CHANNEL, message_id=900 + len(ctx.bot.sent),
-                          reply_to_message=SimpleNamespace(message_id=reply_to) if reply_to else None,
-                          reply_text=reply_text)
-    upd = SimpleNamespace(channel_post=msg, edited_channel_post=None, effective_message=msg,
-                          effective_chat=SimpleNamespace(id=CHANNEL), effective_user=None, callback_query=None,
-                          message=None)
-    return upd, replies
-
-
-async def test_channel_plain_post_is_a_note(channel_ctx):
-    upd, _ = channel_post(channel_ctx, "Batch 14 pH dropped 0.4 after a preservative change.")
-    await tb.on_channel_post(upd, channel_ctx)
-    assert channel_ctx.captured == ["Batch 14 pH dropped 0.4 after a preservative change."]
-
-
-async def test_channel_command_runs_and_replies_in_channel(channel_ctx, db, fake):
-    ids = add_notes(db, 1)
-    fake.queue("triage", {"scores": [score(ids[0], 8)]})
-    upd, _ = channel_post(channel_ctx, "/triage@Meeras_Content_bot")
-    await tb.on_channel_post(upd, channel_ctx)
-    assert channel_ctx.captured == []                                   # commands are not notes
-    assert all(m["chat_id"] == CHANNEL for m in channel_ctx.bot.sent)   # everything stays in the channel
-    assert any(m["text"].startswith("Shortlist: 1 note") for m in channel_ctx.bot.sent)
-
-
-async def test_channel_draft_buttons_and_reply_to_revise(channel_ctx, db, fake):
-    nid = add_notes(db, 1)[0]
-    fake.queue("draft", draft_json(GOOD_POST))
-    await tb.on_callback(cb_update(f"d:{nid}"), channel_ctx)            # Meera taps Draft this (user 42)
-    d = db.one("SELECT * FROM drafts")
-    post_msg_id = json.loads(d["post_message_ids"])[0]
-
-    fake.queue("draft", draft_json(GOOD_POST.replace("Batch fourteen", "Batch 14")))
-    upd, replies = channel_post(channel_ctx, "Use the digit 14 in the first line", reply_to=post_msg_id)
-    await tb.on_channel_post(upd, channel_ctx)
-    new = db.one("SELECT * FROM drafts ORDER BY id DESC LIMIT 1")
-    assert new["parent_draft_id"] == d["id"] and new["revision_instruction"] == "Use the digit 14 in the first line"
-    assert channel_ctx.captured == []
-
-
-async def test_channel_revise_button_then_reply_to_prompt(channel_ctx, db, fake):
-    nid = add_notes(db, 1)[0]
-    fake.queue("draft", draft_json(GOOD_POST))
-    await tb.start_draft(channel_ctx, [nid])
-    did = db.one("SELECT id FROM drafts")["id"]
-    await tb.on_callback(cb_update(f"rv:{did}"), channel_ctx)
-    prompt = channel_ctx.bot.sent[-1]
-    assert "Reply to this message" in prompt["text"] and prompt["markup"] is None   # no ForceReply in channels
-    fake.queue("draft", draft_json(GOOD_POST))
-    upd, _ = channel_post(channel_ctx, "Make it shorter", reply_to=prompt["id"])
-    await tb.on_channel_post(upd, channel_ctx)
-    assert db.one("SELECT revision_instruction r FROM drafts ORDER BY id DESC LIMIT 1")["r"] == "Make it shorter"
-
-
-async def test_channel_buttons_still_only_answer_meera(channel_ctx, db):
-    nid = add_notes(db, 1)[0]
-    await tb.on_callback(cb_update(f"d:{nid}", user_id=7), channel_ctx)
-    assert channel_ctx.bot.sent == [] and db.one("SELECT COUNT(*) c FROM drafts")["c"] == 0
-
-
-async def test_private_mode_channel_commands_are_just_notes(ctx, db):
-    upd, _ = channel_post(ctx, "/triage")
-    upd.effective_message.chat_id = CHANNEL
-    captured = []
-
-    async def fake_capture(msg, db_, gemini, react=False):
-        captured.append(msg.text)
-    tb.capture.capture_message, orig = fake_capture, tb.capture.capture_message
-    try:
-        await tb.on_channel_post(upd, ctx)
-    finally:
-        tb.capture.capture_message = orig
-    assert captured == ["/triage"]

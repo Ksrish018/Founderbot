@@ -14,8 +14,6 @@ The full build brief is in `CLAUDE.md`. Meera's voice contract is `prompts/voice
 
 **Hosting on Vercel?** Follow [VERCEL.md](VERCEL.md) instead of the local setup below.
 
-**Want everything in one chat?** Set `REVIEW_CHAT_ID` to the notes channel ID to run in single-chat mode: notes, shortlists, drafts and commands all live in the channel. See [VERCEL.md](VERCEL.md#single-chat-mode-everything-in-meeras-content-capture).
-
 ---
 
 ## Setup (about 15 minutes, no coding)
