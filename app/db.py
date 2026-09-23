@@ -187,6 +187,10 @@ class DB:
             for stmt in ddl.split(";"):
                 if stmt.strip():
                     self.conn.execute(stmt)
+            # Supabase exposes the public schema through its REST API. Row Level Security with no policies blocks
+            # that API (anon/authenticated roles) completely; the bot connects as the table owner, which bypasses RLS.
+            for table in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", ddl):
+                self.conn.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         else:
             self.conn.executescript(ddl)
             self.conn.commit()

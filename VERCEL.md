@@ -50,7 +50,20 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
    variables automatically. You don't need to copy anything.
 3. Redeploy so the new variables take effect: **Deployments** tab → the latest deployment → **⋯** → **Redeploy**.
 
-The tables are created automatically on first use.
+The tables are created automatically on first use, with Row Level Security switched on so Supabase's public REST
+API can't read them.
+
+**Already created a Supabase project yourself?** Skip the marketplace and add the connection string by hand:
+
+1. In Supabase, open the project → click **Connect** (top of the page) → **Connection String** tab →
+   choose **Transaction pooler** (port `6543`). Copy the URI. It looks like
+   `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:6543/postgres`
+2. Replace `[YOUR-PASSWORD]` with your database password (Project Settings → Database → Reset database password
+   if you don't know it). If the password contains `@ # / ? : %`, pick a new letters-and-numbers password instead.
+3. In Vercel add it as the environment variable `DATABASE_URL`, then redeploy.
+
+Use the **Transaction pooler**, not "Direct connection": the direct address is IPv6-only and Vercel can't reach it.
+You don't need the Supabase project URL or API keys; the bot talks to Postgres directly.
 
 ## Step 4. Connect Telegram (one click)
 
