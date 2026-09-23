@@ -141,7 +141,8 @@ def advance(db: DB, request_id: int) -> bool:
     if nxt >= len(ranking):
         return False
     db.run("UPDATE draft_requests SET news_pos=? WHERE id=?", (nxt, request_id))
-    db.run("UPDATE news_items SET chosen=(id=?) WHERE draft_request_id=?", (ranking[nxt], request_id))
+    db.run("UPDATE news_items SET chosen=CASE WHEN id=? THEN 1 ELSE 0 END WHERE draft_request_id=?",
+           (ranking[nxt], request_id))
     return True
 
 

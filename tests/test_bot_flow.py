@@ -110,7 +110,7 @@ async def test_unauthorised_user_is_ignored(ctx, db):
     assert ctx.bot.sent == [] and db.one("SELECT COUNT(*) c FROM drafts")["c"] == 0
 
 
-async def test_gemini_outage_schedules_retry(ctx, db, fake):
+async def test_gemini_outage_offers_retry_button(ctx, db, fake):
     from app.gemini_client import GeminiUnavailable
 
     async def down(**k):
@@ -118,9 +118,19 @@ async def test_gemini_outage_schedules_retry(ctx, db, fake):
     fake.generate_json = down
     nid = add_notes(db, 1)[0]
     await tb.start_draft(ctx, [nid])
-    assert "Drafting delayed, will retry" in ctx.bot.sent[-1]["text"]
-    assert ctx.job_queue.jobs and ctx.job_queue.jobs[0][2] == {"note_ids": [nid], "attempt": 1}
+    last = ctx.bot.sent[-1]
+    assert "Drafting delayed" in last["text"]
+    assert last["markup"].inline_keyboard[0][0].callback_data == f"rt:{nid}"
     assert db.note(nid)["status"] != "drafting"
+    assert db.try_lock(f"note:{nid}")  # lock was released
+
+
+async def test_db_lock_blocks_concurrent_draft(ctx, db, fake):
+    nid = add_notes(db, 1)[0]
+    assert db.try_lock(f"note:{nid}")          # another invocation is drafting this note
+    await tb.start_draft(ctx, [nid])
+    assert "Already drafting" in ctx.bot.sent[-1]["text"]
+    assert db.one("SELECT COUNT(*) c FROM drafts")["c"] == 0
 
 
 async def test_reject_with_reason(ctx, db, fake):

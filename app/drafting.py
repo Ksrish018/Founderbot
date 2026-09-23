@@ -59,7 +59,7 @@ def build_prompt(db: DB, request_id: int, *, category_hint: str | None, avoid_op
     ex = exemplars.pick(db, category_hint)
     sections = [
         "MEERA'S NOTE(S), VERBATIM:\n" + notes_text(db, note_ids),
-        facts.canonical_block(),
+        facts.canonical_block(facts.load(db)),
         exemplars.block(ex),
         news.item_block(news.current_item(db, request_id)),
         _recent_block(db),

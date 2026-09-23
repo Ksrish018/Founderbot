@@ -12,6 +12,8 @@ A Telegram bot that turns Meera's private channel notes into LinkedIn drafts in 
 
 The full build brief is in `CLAUDE.md`. Meera's voice contract is `prompts/voice_skills.txt`.
 
+**Hosting on Vercel?** Follow [VERCEL.md](VERCEL.md) instead of the local setup below.
+
 ---
 
 ## Setup (about 15 minutes, no coding)
@@ -21,7 +23,7 @@ The full build brief is in `CLAUDE.md`. Meera's voice contract is `prompts/voice
 You need Python 3.11 or newer. In a terminal in this folder:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 ### 2. Fill in your secrets
@@ -127,4 +129,4 @@ python -m pytest
 The tests cover the linter (all 15 published pieces pass, all §16 off-voice samples fail), the importer, news
 filtering, triage, the drafting retry loop, and the review gate end to end with a fake Telegram bot.
 
-See `DEPLOY.md` to run it on an always-on server.
+See [VERCEL.md](VERCEL.md) for Vercel, or `DEPLOY.md` for an always-on server (VM, Railway, Render).

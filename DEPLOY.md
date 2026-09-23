@@ -1,5 +1,7 @@
 # Deploying
 
+**For Vercel, see [VERCEL.md](VERCEL.md).** This page covers running the bot as a long-running process.
+
 The bot uses **long polling**, so it needs no public URL. It only has to keep running somewhere.
 
 ## Option 1: this laptop (simplest, for testing)

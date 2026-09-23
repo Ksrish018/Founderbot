@@ -4,10 +4,9 @@ Nothing here posts anywhere public. The only outputs are messages in Meera's pri
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import time
 
 from telegram import (BotCommand, ForceReply, InlineKeyboardButton as Btn, InlineKeyboardMarkup as Kb,
@@ -29,8 +28,6 @@ REJECT_REASONS = {"o": "Off-voice", "w": "Wrong facts", "k": "Weak idea", "n": "
 OPENING_NAMES = {"A": "Reader's shelf", "B": "Dated scene", "C": "Data drop", "D": "Stated intention",
                  "E": "Reluctant admission", "F": "Customer question", "G": "Conceded truism",
                  "H": "Phrase under inspection", "I": "Shortest version"}
-DRAFT_RETRY_DELAY = 300
-DRAFT_MAX_RETRIES = 3
 
 HELP = (
     "I turn your channel notes into LinkedIn drafts. I never post anything; you paste approved posts yourself.\n\n"
@@ -48,15 +45,22 @@ HELP = (
 
 @dataclass
 class State:
+    """Everything shared between handlers. Anything that must outlive one request lives in the database,
+    because on Vercel each webhook call may run in a fresh instance."""
     settings: Settings
     db: DB
     gemini: Gemini
-    locks: dict[str, asyncio.Lock] = field(default_factory=dict)
-    awaiting: tuple[str, str] | None = None   # ("revise", draft_id) | ("fact", key) | ("final", draft_id)
     gemini_ok: bool = False
 
-    def lock(self, key: str) -> asyncio.Lock:
-        return self.locks.setdefault(key, asyncio.Lock())
+    @property
+    def awaiting(self) -> tuple[str, str] | None:
+        """What Meera's next free-text message answers: ("revise", draft_id) | ("fact", key) | ("final", draft_id)."""
+        raw = self.db.get_kv("awaiting")
+        return tuple(json.loads(raw)) if raw else None
+
+    @awaiting.setter
+    def awaiting(self, value: tuple[str, str] | None) -> None:
+        self.db.set_kv("awaiting", json.dumps(list(value)) if value else None)
 
 
 def st(context: ContextTypes.DEFAULT_TYPE) -> State:
@@ -126,7 +130,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     if not s.settings.meera_user_id:
         await update.message.reply_text(
-            f"Your Telegram user ID is {uid}.\nPut it in .env as MEERA_USER_ID={uid} and restart the bot.")
+            f"Your Telegram user ID is {uid}.\nAdd MEERA_USER_ID={uid} to the bot's settings: in Vercel, "
+            "Settings → Environment Variables, then redeploy (or in .env if running locally, then restart).")
         return
     if not is_meera(update, s):
         return
@@ -139,7 +144,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Hi Meera. Your user ID is {uid}.\n\n"
         f"Setup status\n"
         f"Notes channel {s.settings.telegram_notes_chat_id}: {'bot is admin ✅' if admin else 'bot is NOT admin ❌'}\n"
-        f"Gemini: {'ready (' + s.gemini.model + ') ✅' if s.gemini_ok else 'not ready ❌ (see /health)'}\n"
+        f"Gemini: {'ready (' + s.gemini.model + ') ✅' if s.gemini_ok or s.db.get_kv('gemini_model') else 'not checked yet (send /health)'}\n"
         f"Notes in DB: {n} · voice exemplars: {e}\n"
         f"Shortlists: {s.settings.triage_schedule} {s.settings.timezone}{' (paused)' if paused else ''}\n\n"
         + HELP)
@@ -222,7 +227,7 @@ async def cmd_draft(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @meera_only
 async def cmd_facts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    confs = facts.conflicts()
+    confs = facts.conflicts(facts.load(st(context).db))
     lines, buttons = ["Fact-bank conflicts. Drafts won't use an unresolved one; they insert [DATA NEEDED] instead.\n"], []
     for c in confs:
         mark = "✅ resolved" if c["status"] == "canonical" else "⚠️ unresolved"
@@ -291,6 +296,10 @@ async def store_final(update: Update, s: State, draft, text: str) -> None:
 async def run_triage(context, *, announce_empty: bool) -> None:
     s = st(context)
     try:
+        await capture.retry_pending_transcripts(context.bot, s.db, s.gemini)
+    except Exception as e:  # never block triage on a voice note
+        log.warning("Transcript retry failed: %s", e.__class__.__name__)
+    try:
         n = await triage.score_pending(s.db, s.gemini, s.settings)
     except GeminiAuthError as e:
         await send(context, f"Triage stopped: {e}")
@@ -346,22 +355,17 @@ def cluster_for(s: State, note_id: int) -> list[int]:
     return ids
 
 
-async def start_draft(context, note_ids: list[int], attempt: int = 0) -> None:
+async def start_draft(context, note_ids: list[int]) -> None:
     s = st(context)
-    lock = s.lock(f"note:{note_ids[0]}")
-    if lock.locked():
+    key = f"note:{note_ids[0]}"
+    if not s.db.try_lock(key):
         await send(context, f"Already drafting note {note_ids[0]}. One moment.")
         return
-    async with lock:
-        row = s.db.note(note_ids[0])
-        if attempt == 0 and row["status"] == "drafting":
-            await send(context, f"Note {note_ids[0]} is already being drafted.")
-            return
+    try:
         prev_status = {nid: s.db.note(nid)["status"] for nid in note_ids}
         s.db.set_note_status(note_ids, "drafting")
-        if attempt == 0:
-            merged = f" (merged with {', '.join(map(str, note_ids[1:]))})" if len(note_ids) > 1 else ""
-            await send(context, f"Drafting note {note_ids[0]}{merged}. Checking Google News for a current angle…")
+        merged = f" (merged with {', '.join(map(str, note_ids[1:]))})" if len(note_ids) > 1 else ""
+        await send(context, f"Drafting note {note_ids[0]}{merged}. Checking Google News for a current angle…")
         try:
             req = drafting.start_request(s.db, note_ids)
             await news.find_angle(s.db, s.gemini, s.settings, req, drafting.notes_text(s.db, note_ids))
@@ -372,25 +376,17 @@ async def start_draft(context, note_ids: list[int], attempt: int = 0) -> None:
             return
         except GeminiUnavailable as e:
             _restore(s, prev_status)
-            if attempt < DRAFT_MAX_RETRIES:
-                context.job_queue.run_once(_retry_draft_job, DRAFT_RETRY_DELAY,
-                                           data={"note_ids": note_ids, "attempt": attempt + 1})
-                await send(context, f"Drafting delayed, will retry in {DRAFT_RETRY_DELAY // 60} minutes. ({e})")
-            else:
-                await send(context, f"Drafting failed after {DRAFT_MAX_RETRIES} retries ({e}). "
-                                    f"Try /draft {note_ids[0]} later.")
+            await send(context, f"Drafting delayed: Gemini is unavailable right now ({e}). Tap Retry in a few minutes.",
+                       Kb([[Btn("🔁 Retry", callback_data=f"rt:{note_ids[0]}")]]))
             return
+    finally:
+        s.db.unlock(key)
     await deliver(context, draft_id)
 
 
 def _restore(s: State, prev: dict[int, str]) -> None:
     for nid, status in prev.items():
         s.db.set_note_status([nid], "shortlisted" if status == "drafting" else status)
-
-
-async def _retry_draft_job(context: ContextTypes.DEFAULT_TYPE) -> None:
-    d = context.job.data
-    await start_draft(context, d["note_ids"], attempt=d["attempt"])
 
 
 async def deliver(context, draft_id: int) -> None:
@@ -454,11 +450,11 @@ async def redraft(context, draft_id: int, mode: str, *, instruction: str | None 
                   avoid: list[str] | None = None) -> None:
     s = st(context)
     d = s.db.draft(draft_id)
-    lock = s.lock(f"req:{d['request_id']}")
-    if lock.locked():
+    key = f"req:{d['request_id']}"
+    if not s.db.try_lock(key):
         await send(context, "Already working on this draft. One moment.")
         return
-    async with lock:
+    try:
         if s.db.draft(draft_id)["status"] != "delivered":
             await send(context, "That draft is no longer the current one.")
             return
@@ -468,6 +464,8 @@ async def redraft(context, draft_id: int, mode: str, *, instruction: str | None 
         except (GeminiAuthError, GeminiUnavailable) as e:
             await send(context, f"Couldn't redraft right now ({e}). The current draft is unchanged; try again shortly.")
             return
+    finally:
+        s.db.unlock(key)
     await deliver(context, new_id)
 
 
@@ -480,7 +478,7 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     kind, arg = parts[0], parts[1] if len(parts) > 1 else ""
     await q.answer()
 
-    if kind == "d":
+    if kind in ("d", "rt"):
         await q.edit_message_reply_markup(None)
         await start_draft(context, cluster_for(s, int(arg)))
     elif kind in ("s", "p"):
@@ -523,10 +521,8 @@ async def on_draft_action(update: Update, context, kind: str, draft_id: int, ext
             await send(context, "Can't approve yet. These placeholders are still in the text:\n- " + "\n- ".join(missing)
                        + "\n\nTap Revise and give me the facts, or tell me to cut those sentences.")
             return
-        cur = s.db.conn.execute("UPDATE drafts SET status='approved', decided_at=? WHERE id=? AND status='delivered'",
-                                (iso(), draft_id))
-        s.db.conn.commit()
-        if cur.rowcount == 0:
+        if s.db.run_rc("UPDATE drafts SET status='approved', decided_at=? WHERE id=? AND status='delivered'",
+                       (iso(), draft_id)) == 0:
             return  # double tap
         s.db.set_note_status(json.loads(d["note_ids"]), "used")
         s.db.event("approved", draft_id=draft_id)
@@ -565,9 +561,9 @@ async def on_draft_action(update: Update, context, kind: str, draft_id: int, ext
         await send(context, "Redrafting without a news hook…")
         await redraft(context, draft_id, "angle")
     elif kind == "rj":
-        s.db.conn.execute("UPDATE drafts SET status='rejected', decided_at=? WHERE id=? AND status='delivered'",
-                          (iso(), draft_id))
-        s.db.conn.commit()
+        if s.db.run_rc("UPDATE drafts SET status='rejected', decided_at=? WHERE id=? AND status='delivered'",
+                       (iso(), draft_id)) == 0:
+            return
         s.db.set_note_status(json.loads(d["note_ids"]), "skipped", park_days=30)
         s.db.event("rejected", draft_id=draft_id)
         await q.edit_message_reply_markup(None)
@@ -629,7 +625,16 @@ async def job_transcripts(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ---- wiring ---------------------------------------------------------------------
-def build_application(settings: Settings, db: DB, gemini: Gemini) -> Application:
+COMMANDS = [
+    ("triage", "Score notes and send the shortlist"), ("notes", "Latest notes"),
+    ("draft", "Draft a note by id"), ("final", "Record what you posted"), ("facts", "Resolve fact conflicts"),
+    ("stats", "Progress this week"), ("pause", "Pause scheduled shortlists"),
+    ("resume", "Resume scheduled shortlists"), ("health", "System check"), ("help", "Help")]
+
+
+def build_application(settings: Settings, db: DB, gemini: Gemini, *, polling: bool = True) -> Application:
+    """polling=True: long-running local/VM process with its own scheduler.
+    polling=False: serverless webhook mode (Vercel); scheduling comes from Vercel Cron instead."""
     async def post_init(app: Application) -> None:
         state: State = app.bot_data["state"]
         me = await app.bot.get_me()
@@ -641,16 +646,16 @@ def build_application(settings: Settings, db: DB, gemini: Gemini) -> Application
             raise
         except GeminiUnavailable as e:
             log.error("Gemini not ready: %s (the bot will run; drafting retries later)", e)
-        await app.bot.set_my_commands([BotCommand(c, d) for c, d in [
-            ("triage", "Score notes and send the shortlist"), ("notes", "Latest notes"),
-            ("draft", "Draft a note by id"), ("final", "Record what you posted"), ("facts", "Resolve fact conflicts"),
-            ("stats", "Progress this week"), ("pause", "Pause scheduled shortlists"),
-            ("resume", "Resume scheduled shortlists"), ("health", "System check"), ("help", "Help")]])
+        await app.bot.set_my_commands([BotCommand(c, d) for c, d in COMMANDS])
         if not settings.meera_user_id:
             log.warning("MEERA_USER_ID is not set. Ask Meera to send /start to the bot, then add her id to .env.")
 
-    app = (Application.builder().token(settings.telegram_bot_token).concurrent_updates(True)
-           .post_init(post_init).build())
+    builder = Application.builder().token(settings.telegram_bot_token)
+    if polling:
+        builder = builder.concurrent_updates(True).post_init(post_init)
+    else:
+        builder = builder.updater(None).job_queue(None)
+    app = builder.build()
     app.bot_data["state"] = State(settings=settings, db=db, gemini=gemini)
 
     app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POSTS & filters.Chat(settings.telegram_notes_chat_id),
@@ -664,6 +669,8 @@ def build_application(settings: Settings, db: DB, gemini: Gemini) -> Application
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT & private & ~filters.COMMAND, on_text))
 
+    if not polling:
+        return app
     days, at = parse_schedule(settings.triage_schedule)
     tz = settings.tz
     app.job_queue.run_daily(job_triage, time(at.hour, at.minute, tzinfo=tz), days=days, name="triage")

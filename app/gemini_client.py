@@ -70,7 +70,9 @@ class Gemini:
     _cache_disabled: bool = False
 
     def __post_init__(self) -> None:
-        self.model = self.settings.gemini_model
+        # Reuse the model picked by the last health check (serverless: don't re-list models on every request).
+        saved = (self.db.get_kv("gemini_model") or "").split("|")
+        self.model = saved[1] if len(saved) == 2 and saved[0] == self.settings.gemini_model else self.settings.gemini_model
         if self.client is None:
             self.client = genai.Client(api_key=self.settings.gemini_api_key,
                                        http_options=types.HttpOptions(timeout=60_000))
@@ -100,6 +102,7 @@ class Gemini:
                 f"Available Flash models: {flash[:10]}. Update GEMINI_MODEL in .env.")
         if self.model != self.settings.gemini_model:
             log.warning("GEMINI_MODEL %s not available; using fallback %s", self.settings.gemini_model, self.model)
+        self.db.set_kv("gemini_model", f"{self.settings.gemini_model}|{self.model}")
 
         try:
             await self.client.aio.models.generate_content(model=self.model, contents="Reply with the word OK.")
@@ -125,6 +128,10 @@ class Gemini:
             return None
         key = f"{self.model}:{hashlib.sha256(system.encode()).hexdigest()[:16]}"
         c = self._caches.get(key)
+        if c is None:  # another serverless invocation may already have created it
+            saved = (self.db.get_kv(f"gemini_cache:{key}") or "").split("|")
+            if len(saved) == 2:
+                c = _Cache(saved[0], float(saved[1]))
         if c and c.expires > time.time() + 60:
             return c.name
         try:
@@ -133,6 +140,7 @@ class Gemini:
                 config=types.CreateCachedContentConfig(system_instruction=system, ttl="3600s",
                                                        display_name="skinstinct-voice"))
             self._caches[key] = _Cache(cache.name, time.time() + 3600)
+            self.db.set_kv(f"gemini_cache:{key}", f"{cache.name}|{time.time() + 3600}")
             return cache.name
         except Exception as e:  # caching is an optimisation only
             log.info("Context caching unavailable (%s); sending system instruction inline.", e.__class__.__name__)
@@ -164,6 +172,7 @@ class Gemini:
         except errors.APIError as e:
             if cache_name and e.code in (400, 403, 404):  # cache expired or unsupported: retry without it
                 self._cache_disabled = True
+                self.db.run("DELETE FROM kv WHERE key LIKE ?", ("gemini_cache:%",))
                 return await self._generate(purpose=purpose, contents=contents, system=system,
                                             temperature=temperature, schema=schema)
             self.db.llm_log(purpose=purpose, model=self.model, ok=False, error=f"{e.code} {e.status}",

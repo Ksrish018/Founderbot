@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 
 from app import drafting, facts, triage
 from app.config import CONFIG_DIR
@@ -121,12 +120,15 @@ def test_approve_guard_and_edit_ratio():
     assert 0 < drafting.edit_ratio(GOOD_POST, GOOD_POST.replace("Batch fourteen", "Batch 14")) < 0.05
 
 
-def test_facts_resolve_writes_status_and_log(db, tmp_path):
-    p = tmp_path / "facts.yaml"
-    shutil.copy(CONFIG_DIR / "facts.yaml", p)
-    c = facts.resolve(db, "C1", "Skinstinct launched in March 2025.", path=p)
+def test_facts_resolve_is_stored_in_db_not_yaml(db):
+    before = (CONFIG_DIR / "facts.yaml").read_text(encoding="utf-8")
+    c = facts.resolve(db, "C1", "Skinstinct launched in March 2025.")
     assert c["status"] == "canonical" and c["resolved_at"]
-    data = facts.load(p)
-    assert "Skinstinct launched in March 2025." in facts.canonical_block(data)
-    assert "[C1]" not in facts.canonical_block(data).split("CONFLICTS")[1]
+    assert (CONFIG_DIR / "facts.yaml").read_text(encoding="utf-8") == before   # yaml untouched
+    block = facts.canonical_block(facts.load(db))
+    assert "Skinstinct launched in March 2025." in block
+    assert "[C1]" not in block.split("CONFLICTS")[1]
+    assert "[C1]" in facts.canonical_block(facts.load())                        # baseline still has it
     assert db.one("SELECT new_status FROM facts_log WHERE fact_key='C1'")["new_status"] == "canonical"
+    facts.resolve(db, "C1", "Updated answer.")
+    assert "Updated answer." in facts.canonical_block(facts.load(db))

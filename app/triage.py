@@ -39,7 +39,7 @@ def pending_notes(db: DB) -> list:
 def build_prompt(db: DB, rows: list) -> str:
     notes = "\n\n".join(f"NOTE id={r['id']} (captured {r['created_at'][:10]}, {r['type']}):\n{db.note_body(r)}"
                         for r in rows)
-    return (f"{facts.canonical_block()}\n\n"
+    return (f"{facts.canonical_block(facts.load(db))}\n\n"
             f"Score each of these {len(rows)} notes. Use the exact note ids.\n\n{notes}")
 
 

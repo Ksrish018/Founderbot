@@ -146,7 +146,7 @@ def main(argv: list[str]) -> int:
     if not folder.is_dir():
         print(f"Not a folder: {folder}")
         return 2
-    db = DB(get_settings().db_file)
+    db = DB(get_settings().db_target)
     if argv[0] == "notes":
         n = import_notes(db, folder)
         total = db.one("SELECT COUNT(*) c FROM notes WHERE source='import'")["c"]

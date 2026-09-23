@@ -28,8 +28,8 @@ def compute(db: DB, settings: Settings) -> dict:
     for label, window in (("week", True), ("all", False)):
         out[label] = {
             "captured": c("SELECT COUNT(*) c FROM notes WHERE 1=1", "created_at", window),
-            "shortlisted": c("SELECT COUNT(DISTINCT json_extract(payload_json,'$.note_id')) c FROM events "
-                             "WHERE type='shortlisted'", "created_at", window),
+            "shortlisted": c("SELECT COUNT(DISTINCT note_id) c FROM events WHERE type='shortlisted'", "created_at",
+                             window),
             "drafted": c("SELECT COUNT(DISTINCT request_id) c FROM drafts WHERE 1=1", "delivered_at", window),
             "approved": c("SELECT COUNT(*) c FROM drafts WHERE status='approved'", "decided_at", window),
             "rejected": c("SELECT COUNT(*) c FROM drafts WHERE status='rejected'", "decided_at", window),

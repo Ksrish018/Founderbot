@@ -53,7 +53,7 @@ def main() -> int:
         return 1
     log.info("Starting with %s", settings)
 
-    db = DB(settings.db_file)
+    db = DB(settings.db_target)
     gemini = Gemini(settings, db)
     app = build_application(settings, db, gemini)
     try:

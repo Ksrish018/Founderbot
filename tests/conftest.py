@@ -58,8 +58,19 @@ def settings() -> Settings:
 
 
 @pytest.fixture
-def db() -> DB:
-    return DB(":memory:")
+def db():
+    """SQLite by default. Set PG_TEST_URL=postgresql://... to run the same tests against Postgres."""
+    url = os.environ.get("PG_TEST_URL")
+    if not url:
+        yield DB(":memory:")
+        return
+    import psycopg
+    with psycopg.connect(url, autocommit=True) as c:
+        c.execute("DROP SCHEMA IF EXISTS public CASCADE")
+        c.execute("CREATE SCHEMA public")
+    d = DB(url)
+    yield d
+    d.close()
 
 
 @pytest.fixture

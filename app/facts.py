@@ -1,6 +1,9 @@
-"""Fact bank (config/facts.yaml). Drafts see canonical facts only; conflicts are resolved by Meera via /facts."""
+"""Fact bank. config/facts.yaml is the read-only baseline from voice skill §14; Meera's /facts resolutions are
+stored in the database (fact_resolutions) and overlaid on it, so they survive serverless deploys."""
 from __future__ import annotations
 
+import copy
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -11,19 +14,26 @@ from .db import DB, iso
 FACTS_PATH = CONFIG_DIR / "facts.yaml"
 
 
-def load(path: Path = FACTS_PATH) -> dict:
+@lru_cache
+def _load_yaml(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def save(data: dict, path: Path = FACTS_PATH) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True, width=120)
+def load(db: DB | None = None, path: Path = FACTS_PATH) -> dict:
+    """Baseline facts with any resolutions from the database applied."""
+    data = copy.deepcopy(_load_yaml(str(path)))
+    if db is not None:
+        res = {r["fact_key"]: r for r in db.q("SELECT * FROM fact_resolutions")}
+        for c in data.get("conflicts", []):
+            r = res.get(c["key"])
+            if r:
+                c.update(status="canonical", resolution=r["value"], resolved_at=r["resolved_at"])
+    return data
 
 
-def canonical_block(data: dict | None = None) -> str:
-    """Text block for the drafting prompt: canonical facts, resolved conflicts, unresolved conflicts, open loops."""
-    data = data or load()
+def canonical_block(data: dict) -> str:
+    """Text block for prompts: canonical facts, resolved conflicts, unresolved conflicts, open loops."""
     lines = ["CANONICAL FACTS (the only facts about Meera and Skinstinct you may state):"]
     lines += [f"- [{f['key']}] {f['text']}" for f in data.get("facts", []) if f.get("status") == "canonical"]
     resolved = [c for c in data.get("conflicts", []) if c.get("status") == "canonical" and c.get("resolution")]
@@ -39,20 +49,19 @@ def canonical_block(data: dict | None = None) -> str:
     return "\n".join(lines)
 
 
-def conflicts(data: dict | None = None) -> list[dict]:
-    return (data or load()).get("conflicts", [])
+def conflicts(data: dict) -> list[dict]:
+    return data.get("conflicts", [])
 
 
 def resolve(db: DB, key: str, value: str, path: Path = FACTS_PATH) -> dict:
-    data = load(path)
-    for c in data.get("conflicts", []):
-        if c["key"] == key:
-            old = c.get("status")
-            c["status"] = "canonical"
-            c["resolution"] = value.strip()
-            c["resolved_at"] = iso()
-            save(data, path)
-            db.run("INSERT INTO facts_log(fact_key, old_status, new_status, value, changed_at) VALUES (?,?,?,?,?)",
-                   (key, old, "canonical", value.strip(), iso()))
-            return c
-    raise KeyError(key)
+    data = load(db, path)
+    c = next((c for c in data.get("conflicts", []) if c["key"] == key), None)
+    if c is None:
+        raise KeyError(key)
+    old, value, t = c.get("status"), value.strip(), iso()
+    db.run("INSERT INTO fact_resolutions(fact_key, value, resolved_at) VALUES (?,?,?) "
+           "ON CONFLICT(fact_key) DO UPDATE SET value=excluded.value, resolved_at=excluded.resolved_at", (key, value, t))
+    db.run("INSERT INTO facts_log(fact_key, old_status, new_status, value, changed_at) VALUES (?,?,?,?,?)",
+           (key, old, "canonical", value, t))
+    c.update(status="canonical", resolution=value, resolved_at=t)
+    return c

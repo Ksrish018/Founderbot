@@ -1,12 +1,13 @@
 """Settings loaded from .env. Secrets never leave this object except to the SDKs that need them."""
 from __future__ import annotations
 
+import hashlib
 from datetime import time
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,6 +55,10 @@ class Settings(BaseSettings):
     allow_hashtags: bool = False
     capture_reaction: bool = False
     db_path: str = "data/app.db"
+    # Postgres connection string. On Vercel the Supabase/Neon integration sets one of these automatically.
+    database_url: str = Field("", validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL"))
+    # Vercel sends "Authorization: Bearer <CRON_SECRET>" to cron endpoints; also protects /api/setup.
+    cron_secret: str = ""
     log_level: str = "INFO"
     draft_temperature: float = 0.7
     triage_temperature: float = 0.2
@@ -81,6 +86,16 @@ class Settings(BaseSettings):
     @property
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.timezone)
+
+    @property
+    def db_target(self) -> str:
+        """Postgres URL if configured, else the local SQLite file."""
+        return self.database_url or str(self.db_file)
+
+    @property
+    def telegram_webhook_secret(self) -> str:
+        """Secret Telegram echoes in X-Telegram-Bot-Api-Secret-Token; derived from the bot token."""
+        return hashlib.sha256(f"{self.telegram_bot_token}:webhook".encode()).hexdigest()[:48]
 
     @property
     def db_file(self) -> Path:
