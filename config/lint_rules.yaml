@@ -1,0 +1,248 @@
+# Deterministic voice rules, built from voice_skills.txt §2, §3, §8 and §17.
+# Banned phrases match case-insensitively on word boundaries, and are allowed
+# only inside quotation marks (where Meera is criticising the phrase).
+
+word_count:
+  min: 380
+  max: 520
+  short_min: 150
+
+# §8.1 hype and beauty-marketing language. Context-dependent words that she
+# uses neutrally ("natural", "clean", "nourishing") are soft warnings instead.
+banned_hype:
+  - game-changer
+  - game changer
+  - miracle
+  - holy grail
+  - magic
+  - magical
+  - glow
+  - glowing
+  - glass skin
+  - radiant
+  - flawless
+  - luxurious
+  - indulgent
+  - pamper
+  - pampering
+  - self-care ritual
+  - must-have
+  - cult favourite
+  - cult favorite
+  - obsessed
+  - skin-loving
+  - detox
+  - toxin-free
+  - chemical-free
+  - non-toxic
+  - clinically proven
+  - dermatologist approved
+  - dermatologist-approved
+  - results guaranteed
+  - guaranteed
+  - revolutionary
+  - breakthrough
+  - next-level
+  - transformative
+  - scientifically proven
+  - proven
+  - scam
+  - devastated
+  - thrilled
+  - humbled
+  - blessed
+  - heartbroken
+  - beyond grateful
+
+# §8.2 LinkedIn growth-hack language
+banned_growth:
+  - agree?
+  - thoughts?
+  - drop a comment
+  - tag someone
+  - repost if
+  - follow for more
+  - save this post
+  - here's the thing
+  - let that sink in
+  - read that again
+  - unpopular opinion
+  - hot take
+  - humbled to announce
+  - thrilled to share
+  - big news
+  - this changed everything
+  - things i wish i knew
+  - the secret nobody tells you
+  - stop scrolling
+  - buckle up
+  - picture this
+  - let's talk about
+  - as a founder
+  - as someone who
+  - ever wondered
+
+# §8.3 sales moves
+banned_sales:
+  - discount code
+  - use code
+  - link in bio
+  - link in comments
+  - shop now
+  - buy now
+  - limited stock
+  - limited time
+  - only a few left
+  - hurry
+  - dm me
+  - dm for
+  - order now
+  - "% off"
+  - rs.
+  - ₹
+
+# §8.7 closers
+banned_closers:
+  - what do you think
+  - let me know in the comments
+  - stay tuned
+  - happy skincare
+  - stay glowing
+  - xoxo
+  - cheers
+
+# Soft warnings: words she uses neutrally but which are banned as praise.
+soft_words:
+  - natural
+  - clean
+  - nourishing
+  - really
+  - simply
+  - amazing
+
+# §9.5 American -> British/Indian spellings. Keys are matched as whole words
+# (with common suffixes handled by listing them).
+american_spellings:
+  oxidize: oxidise
+  oxidizes: oxidises
+  oxidized: oxidised
+  oxidizing: oxidising
+  oxidization: oxidisation
+  color: colour
+  colors: colours
+  colored: coloured
+  colorless: colourless
+  moisturizer: moisturiser
+  moisturizers: moisturisers
+  moisturize: moisturise
+  moisturizing: moisturising
+  moisturized: moisturised
+  sensitization: sensitisation
+  sensitize: sensitise
+  sensitizing: sensitising
+  behavior: behaviour
+  behaviors: behaviours
+  behavioral: behavioural
+  standardized: standardised
+  standardize: standardise
+  standardization: standardisation
+  organization: organisation
+  organizations: organisations
+  organize: organise
+  organized: organised
+  aging: ageing
+  anti-aging: anti-ageing
+  center: centre
+  centers: centres
+  centimeter: centimetre
+  centimeters: centimetres
+  favorite: favourite
+  favorites: favourites
+  favor: favour
+  favorable: favourable
+  flavor: flavour
+  odor: odour
+  odorless: odourless
+  analyze: analyse
+  analyzed: analysed
+  analyzing: analysing
+  categorization: categorisation
+  categorize: categorise
+  emphasize: emphasise
+  recognize: recognise
+  recognized: recognised
+  realize: realise
+  realized: realised
+  optimize: optimise
+  optimized: optimised
+  maximize: maximise
+  minimize: minimise
+  stabilize: stabilise
+  stabilized: stabilised
+  stabilizer: stabiliser
+  stabilizers: stabilisers
+  apologize: apologise
+  prioritize: prioritise
+  summarize: summarise
+  labeled: labelled
+  labeling: labelling
+  fiber: fibre
+  gray: grey
+  estrogenic: oestrogenic
+  defense: defence
+  catalog: catalogue
+
+# Upper-case tokens that are acronyms, not shouting.
+allowed_caps:
+  - INCI
+  - CDSCO
+  - DTC
+  - D2C
+  - SPF
+  - AHA
+  - BHA
+  - PHA
+  - UV
+  - UVA
+  - UVB
+  - PA
+  - FDA
+  - BIS
+  - GMP
+  - ISO
+  - CEO
+  - IST
+  - USA
+  - UK
+  - EU
+  - ASCI
+  - DNA
+  - PDF
+  - HPLC
+  - COA
+  - NP
+  - AP
+  - EOS
+  - TEWL
+  - OTC
+  - MRP
+  - PPE
+  - SKU
+  - SKUS
+  - NMF
+  - LAA
+  - SAP
+  - MAP
+  - DATA
+  - NEEDED
+  - SOURCE
+  - VERIFY
+
+boundary_patterns:
+  - "I'm not saying"
+  - "I am not saying"
+  - "I am not"
+  - "I'm not"
+  - "not saying"
+  - "What I'm saying"
+  - "What I am saying"

@@ -1,0 +1,91 @@
+# Fact bank, extracted from voice_skills.txt §14.
+# status: canonical  -> drafts may use it
+#         conflict   -> drafts must NOT use it; Meera resolves it via /facts
+# Only the bot's /facts command should change statuses (it writes a timestamp).
+
+facts:
+  - key: meera_founder
+    status: canonical
+    text: Meera Pillai is the founder of Skinstinct.
+  - key: meera_background
+    status: canonical
+    text: Meera spent two years working in pharmaceutical formulation before Skinstinct.
+  - key: meera_not_derm
+    status: canonical
+    text: Meera is not a dermatologist and has no medical degree. She can read a CoA and understands stability documentation and formulation chemistry.
+  - key: stability_review_2021
+    status: canonical
+    text: In 2021 Meera sat in a stability review at the pharma company where a cosmeceutical had an 8% active, a 24-month stability claim, and a finished pH of 3.2 against known degradation below pH 3.8. The testing protocol had been inherited from another product. It passed review. She left 7 months later.
+  - key: cm_brief
+    status: canonical
+    text: Skinstinct's contract manufacturer brief requires pH documentation, stability testing at three-month intervals for the first year, and mid-batch CoA sampling.
+  - key: serum_ph
+    status: canonical
+    text: Skinstinct serum pH is 5.5-5.8, documented on every batch.
+  - key: fragrance_free
+    status: canonical
+    text: Everything Skinstinct makes is fragrance-free, including the preservative system, emollients and carrier ingredients.
+  - key: no_parabens
+    status: canonical
+    text: Skinstinct uses no parabens, for pragmatic and customer-trust reasons, not because Meera believes they are dangerous at cosmetic concentrations.
+  - key: ceramides
+    status: canonical
+    text: Skinstinct's ceramide approach uses ceramide NP and AP, paired with cholesterol and fatty acids to approximate the physiological ratio. No product is marketed primarily on barrier repair.
+  - key: testing_published
+    status: canonical
+    text: Testing details (sample size, study type, who ran it) are published on the Skinstinct website; some testing is early stage.
+  - key: does_not_sell
+    status: canonical
+    text: Skinstinct does not sell a Vitamin C product, a peptide product, or a sunscreen.
+  - key: products_in_formulation
+    status: canonical
+    text: Skinstinct has two products in formulation, not yet discussed in detail; one has been in development for over a year.
+  - key: vitamin_c_attempt
+    status: canonical
+    text: Meera has been trying to formulate a Vitamin C product for about 14 months (as of newsletter_004). Internal testing found L-ascorbic acid above 10% needed airless pump packaging, pH below 3.5, and an antioxidant support system for 12-month stability; without all three, concentration dropped measurably within 4-6 months.
+  - key: returns_texture
+    status: canonical
+    text: In the 12 months to June 2025, 23% of Skinstinct returns cited texture or feel; 71% of those were from cities with average annual humidity above 70% (Mumbai, Chennai, Kochi, Kolkata).
+  - key: serum_reformulation
+    status: canonical
+    text: The original serum base was too film-forming for high humidity. It was reformulated to a lighter base with an adjusted humectant-to-occlusive balance. Active concentrations were unchanged.
+  - key: repeat_rate
+    status: canonical
+    text: Skinstinct's 12-month repeat purchase rate is 67%. Meera cites 20-40% as the typical DTC range and does not claim to know how much is formulation versus trust.
+  - key: fragrance_conversation
+    status: canonical
+    text: Meera has had the fragrance-free explanation conversation "a few hundred times."
+
+conflicts:
+  - key: C1
+    status: conflict
+    title: Launch timeline
+    text: linkedin_post_002 says "Three years later" (from the 2021 meeting). newsletter_011 is titled "18 months of Skinstinct" but refers to "this year" and "the first year". newsletter_008 references "the last two years" with the contract manufacturer. Needs one canonical launch date.
+    resolution: null
+    resolved_at: null
+  - key: C2
+    status: conflict
+    title: Return metrics
+    text: linkedin_post_003 reports shares of returns (23% texture, 71% humid-city, then "dropped to 8%"). newsletter_011 reports a return RATE in humid cities "almost three times" elsewhere. These are different measures and must never be combined. What does "dropped to 8%" measure?
+    resolution: null
+    resolved_at: null
+  - key: C3
+    status: conflict
+    title: Niacinamide concentration
+    text: newsletter_002 uses "niacinamide at 4%, pH 5.5-6.0, documented six-month stability" as an illustrative example, not Skinstinct's spec. Skinstinct's actual niacinamide concentration has not been supplied.
+    resolution: null
+    resolved_at: null
+  - key: C4
+    status: conflict
+    title: Product in development
+    text: Is the product "in development for over a year" (newsletter_011) the Vitamin C product from newsletter_004? Do not assume they are the same.
+    resolution: null
+    resolved_at: null
+
+# §14.3 Open-Loop Ledger (E7): public promises. Drafts touching these topics
+# must reference the promise or leave it open, never pretend it is closed.
+open_loops:
+  - Will explain exactly what was done and why when a Vitamin C product is right. (newsletter_004)
+  - Will make barrier-repair claims only once formulation data supports them. (newsletter_007)
+  - Will email about launches with full explanation of contents and rationale. (newsletter_001)
+  - Will say so when she doesn't know, when research is inconclusive, and when she thinks the industry is misrepresenting something. (newsletter_001)
