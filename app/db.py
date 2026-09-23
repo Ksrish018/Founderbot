@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit
 
 TABLES = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -137,6 +137,19 @@ def parse_iso(s: str | None) -> datetime | None:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _encode_password(url: str) -> str:
+    """Percent-encode the password so characters like @ # / ? : in it don't break parsing.
+    The host part never contains '@', so the last '@' separates credentials from the host."""
+    scheme, sep, rest = url.partition("://")
+    if not sep or "@" not in rest:
+        return url
+    userinfo, _, hostpart = rest.rpartition("@")
+    user, colon, pw = userinfo.partition(":")
+    if not colon:
+        return url
+    return f"{scheme}://{user}:{quote(unquote(pw), safe='')}@{hostpart}"
+
+
 def clean_pg_url(url: str) -> str:
     """Vercel integrations append params psycopg doesn't understand (e.g. supa=...). Keep only known ones."""
     if "[YOUR-PASSWORD]" in url:
@@ -144,6 +157,7 @@ def clean_pg_url(url: str) -> str:
                          "Supabase database password (Project Settings -> Database).")
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
+    url = _encode_password(url)
     parts = urlsplit(url)
     keep = {"sslmode", "connect_timeout", "application_name", "options"}
     q = [(k, v) for k, v in parse_qsl(parts.query) if k in keep]

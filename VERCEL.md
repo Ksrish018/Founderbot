@@ -38,11 +38,13 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
    | `GEMINI_API_KEY` | your Gemini key (starts with `AQ.`) |
    | `CRON_SECRET` | the secret from Step 1 |
    | `TELEGRAM_NOTES_CHAT_ID` | `-1003976391640` |
+   | `DATABASE_URL` | your Supabase **Transaction pooler** connection string, with the password filled in (the same line as in your local `.env`) |
 
    Leave `MEERA_USER_ID` out for now; you get it in Step 5.
-5. Click **Deploy**. The first deploy works, but the bot can't store anything until Step 3.
+   If you add `DATABASE_URL` here, skip Step 3.
+5. Click **Deploy**.
 
-## Step 3. Add the database (Supabase)
+## Step 3. Add the database (Supabase) - skip if you set DATABASE_URL in Step 2
 
 1. In your Vercel project, open the **Storage** tab → **Create Database** (or **Browse Marketplace**) →
    choose **Supabase** → free plan → pick a region near India (e.g. Mumbai/Singapore) → **Create**.

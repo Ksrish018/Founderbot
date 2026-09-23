@@ -36,3 +36,16 @@ def test_published_import(db):
 def test_split_on_delimiters():
     assert split_fragments("one idea\n---\nsecond idea\n\n===\nthird") == ["one idea", "second idea", "third"]
     assert split_fragments("a single note - with a spaced hyphen") == ["a single note - with a spaced hyphen"]
+
+
+def test_pg_url_password_with_special_characters_is_encoded():
+    from urllib.parse import unquote, urlsplit
+
+    from app.db import clean_pg_url
+    for pw in ["pa@ss321", "a#b/c?d:e", "plain123", "already%40encoded"]:
+        url = clean_pg_url(f"postgresql://postgres.ref:{pw}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres")
+        parts = urlsplit(url)
+        assert parts.hostname == "aws-0-ap-south-1.pooler.supabase.com" and parts.port == 6543
+        assert parts.username == "postgres.ref"
+        assert unquote(parts.password) == unquote(pw)
+        assert "sslmode=require" in url
