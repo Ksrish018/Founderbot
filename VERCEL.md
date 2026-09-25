@@ -184,6 +184,9 @@ seconds: news lookup, drafting, and up to two voice-lint retries).
 
 - **The bot doesn't respond.** Open `/api/setup?key=...` again and read `webhook_last_error`. Then check
   Vercel → your project → **Logs**.
+- **New pushes show as "Blocked" in Vercel.** On the free Hobby plan, Vercel only deploys commits whose author is the
+  Vercel account owner. Commit with the email of your GitHub account (this repo uses the GitHub no-reply address
+  `283317015+Ksrish018@users.noreply.github.com`), or redeploy the commit from the Vercel dashboard yourself.
 - **You changed an environment variable and nothing happened.** Vercel only applies changes to new deployments.
   Redeploy.
 - **`401` errors in `webhook_last_error`.** Vercel Deployment Protection is blocking Telegram. Settings →
