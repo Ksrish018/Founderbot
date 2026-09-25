@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     database_url: str = Field("", validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL"))
     # Vercel sends "Authorization: Bearer <CRON_SECRET>" to cron endpoints; also protects /api/setup.
     cron_secret: str = ""
+    # Web dashboard login. Falls back to CRON_SECRET if not set.
+    dashboard_password: str = ""
+    # Post web actions into the Telegram review chat too, so the channel and the dashboard stay in sync.
+    web_mirror_telegram: bool = True
+    # Secure (https-only) session cookie. Only set false for local http previews.
+    web_secure_cookie: bool = True
     log_level: str = "INFO"
     draft_temperature: float = 0.7
     triage_temperature: float = 0.2

@@ -46,9 +46,13 @@ def update(uid: int) -> dict:
                                           "from": {"id": 42, "is_bot": False, "first_name": "M"}, "text": "/help"}}
 
 
-def test_index_is_public_and_leaks_nothing(client):
-    r = client.get("/")
-    assert r.status_code == 200 and "token" not in r.text.lower()
+def test_status_and_dashboard_are_public_and_leak_nothing(client):
+    r = client.get("/api/status")
+    assert r.status_code == 200 and r.json()["ok"] is True
+    page = client.get("/")
+    assert page.status_code == 200 and "<title>Content Capture</title>" in page.text
+    for secret in (client.settings.telegram_bot_token, client.settings.cron_secret):
+        assert secret not in page.text
 
 
 def test_webhook_rejects_wrong_secret(client):

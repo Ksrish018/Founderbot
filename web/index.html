@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Content Capture</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231f5f5b'/><path d='M9 21V11h3l4 6 4-6h3v10h-3v-5l-4 6-4-6v5z' fill='white'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f6f4ef; --surface: #ffffff; --surface-2: #fbfaf7; --ink: #1d2220; --ink-2: #4a524f; --muted: #7b837f;
+  --line: #e4e0d7; --accent: #1f5f5b; --accent-ink: #ffffff; --accent-soft: #e3efed;
+  --good: #2e7d4f; --good-soft: #e5f3ea; --warn: #9a6a00; --warn-soft: #fbf1d9; --bad: #a33a2b; --bad-soft: #f8e5e1;
+  --radius: 12px; --shadow: 0 1px 2px rgba(20,24,22,.05), 0 4px 16px rgba(20,24,22,.04);
+  --serif: "Source Serif 4", Georgia, serif; --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121514; --surface: #1a1e1c; --surface-2: #161a18; --ink: #e8ece9; --ink-2: #b9c1bd; --muted: #87908b;
+    --line: #2b312e; --accent: #5fb3aa; --accent-ink: #0f1a18; --accent-soft: #1f302d;
+    --good: #6cc38f; --good-soft: #1b2d22; --warn: #e0b24f; --warn-soft: #2e2715; --bad: #ec8a7b; --bad-soft: #33201d;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121514; --surface: #1a1e1c; --surface-2: #161a18; --ink: #e8ece9; --ink-2: #b9c1bd; --muted: #87908b;
+  --line: #2b312e; --accent: #5fb3aa; --accent-ink: #0f1a18; --accent-soft: #1f302d;
+  --good: #6cc38f; --good-soft: #1b2d22; --warn: #e0b24f; --warn-soft: #2e2715; --bad: #ec8a7b; --bad-soft: #33201d;
+  --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); }
+button, textarea, input { font: inherit; color: inherit; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 16px 64px; }
+header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+header .bar { max-width: 860px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--accent-ink);
+  display: grid; place-items: center; font-weight: 600; flex: none; }
+.brand h1 { font: 600 16px/1.2 var(--sans); margin: 0; white-space: nowrap; }
+.brand p { margin: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spacer { flex: 1; }
+.iconbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px;
+  cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.iconbtn:hover { border-color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0 16px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; box-shadow: var(--shadow); }
+.stat b { display: block; font: 600 20px/1.2 var(--sans); }
+.stat span { color: var(--muted); font-size: 12px; }
+.progressbar { height: 4px; border-radius: 4px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.progressbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+.composer { padding: 14px; margin-bottom: 22px; }
+.composer textarea { width: 100%; min-height: 84px; resize: vertical; border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px; background: var(--surface-2); outline: none; }
+.composer textarea:focus, .inline textarea:focus, .login input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: 12.5px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 8px 14px; cursor: pointer;
+  font-weight: 500; font-size: 14px; color: var(--ink); }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.danger { color: var(--bad); }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.steps li { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13.5px; }
+.steps li.on { color: var(--ink); }
+.steps li.done { color: var(--good); }
+.dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; flex: none; position: relative; }
+.steps li.on .dot { border-color: var(--accent); border-top-color: transparent; animation: spin .9s linear infinite; }
+.steps li.done .dot { background: currentColor; }
+@keyframes spin { to { transform: rotate(360deg); } }
+h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 26px 0 10px; }
+.note { padding: 16px; margin-bottom: 14px; }
+.meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 2px 9px; font-size: 12px;
+  font-weight: 500; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface-2); white-space: nowrap; }
+.chip.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.chip.accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.notetext { margin: 10px 0 0; white-space: pre-wrap; color: var(--ink); }
+.notetext.clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 13px; }
+.verdict { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; }
+.verdict .why { color: var(--ink-2); }
+.draft { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 14px; }
+.paper { font: 17px/1.65 var(--serif); white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 18px 20px; margin: 10px 0; }
+.kv { display: grid; gap: 8px; margin: 10px 0; }
+.box { border-radius: 10px; padding: 10px 12px; font-size: 14px; border: 1px solid var(--line); background: var(--surface-2); }
+.box.news { border-left: 3px solid var(--accent); }
+.box.warn { background: var(--warn-soft); border-color: transparent; color: var(--ink); }
+.box.bad { background: var(--bad-soft); border-color: transparent; }
+.box ul { margin: 4px 0 0; padding-left: 18px; }
+.box .title { font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.inline { margin-top: 10px; display: grid; gap: 8px; }
+.inline textarea { width: 100%; min-height: 70px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--surface-2); outline: none; }
+.approved { background: var(--good-soft); color: var(--good); border-radius: 10px; padding: 10px 12px; font-weight: 500; margin: 10px 0; }
+.empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+  padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 20; box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+.toast.bad { background: var(--bad); color: #fff; }
+.login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login .card { width: 100%; max-width: 380px; padding: 28px; }
+.login h1 { font: 600 20px/1.3 var(--sans); margin: 14px 0 4px; }
+.login p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+.login input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); outline: none; margin-bottom: 12px; }
+.login .btn { width: 100%; padding: 11px; }
+.hidden { display: none !important; }
+.iconbtn { white-space: nowrap; }
+@media (max-width: 640px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .paper { font-size: 16px; padding: 14px; }
+  .brand p { display: none; }
+  header .bar { gap: 6px; }
+  .iconbtn { padding: 6px 8px; font-size: 12.5px; }
+}
+@media (max-width: 420px) {
+  .brand h1 { display: none; }
+}
+</style>
+</head>
+<body>
+
+<section id="login" class="login hidden">
+  <form class="card" id="loginForm">
+    <div class="logo">M</div>
+    <h1>Content Capture</h1>
+    <p>Meera's notes, scores and LinkedIn drafts. Enter the dashboard password.</p>
+    <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
+    <button class="btn primary" type="submit">Log in</button>
+    <p id="loginError" class="hint" style="color:var(--bad);margin:12px 0 0"></p>
+  </form>
+</section>
+
+<section id="app" class="hidden">
+  <header class="top">
+    <div class="bar">
+      <div class="brand">
+        <div class="logo">M</div>
+        <div><h1>Content Capture</h1><p>Meera Pillai · Skinstinct · same feed as the Telegram channel</p></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="iconbtn" id="refreshBtn" title="Refresh">Refresh</button>
+      <button class="iconbtn" id="themeBtn" title="Toggle theme">Theme</button>
+      <button class="iconbtn" id="logoutBtn">Log out</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="stats" id="stats"></div>
+
+    <form class="card composer" id="composer">
+      <textarea id="noteText" placeholder="Drop a note, the way you would in the channel. A number, a document, a customer question…" required></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" id="captureBtn" type="submit">Capture note</button>
+        <span class="hint" id="composerHint">Scored 0-10 straight away. Strong notes are drafted with a Google News check (about a minute).</span>
+      </div>
+      <ul class="steps hidden" id="steps"></ul>
+    </form>
+
+    <h2 class="section">Notes and drafts</h2>
+    <div id="feed"></div>
+  </main>
+</section>
+
+<script>
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const state = { data: null, busy: new Set(), open: {} };
+  const REASONS = { o: "Off-voice", w: "Wrong facts", k: "Weak idea", n: "Not now" };
+
+  // ---- theme (per-viewer convenience only) ----
+  try { const t = localStorage.getItem("mce-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  $("#themeBtn").onclick = () => {
+    const cur = document.documentElement.dataset.theme ||
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = cur === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("mce-theme", next); } catch (e) {}
+  };
+
+  function toast(msg, bad) {
+    const t = document.createElement("div");
+    t.className = "toast" + (bad ? " bad" : "");
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), bad ? 6000 : 3000);
+  }
+
+  async function api(path, opts = {}) {
+    const res = await fetch("/api/web" + path, {
+      method: opts.method || "GET", credentials: "same-origin",
+      headers: opts.body ? { "Content-Type": "application/json" } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    if (res.status === 401 && path !== "/login") { show("login"); throw new Error("Please log in"); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function show(which) {
+    $("#login").classList.toggle("hidden", which !== "login");
+    $("#app").classList.toggle("hidden", which !== "app");
+    if (which === "login") setTimeout(() => $("#password").focus(), 50);
+  }
+
+  $("#loginForm").onsubmit = async (e) => {
+    e.preventDefault();
+    $("#loginError").textContent = "";
+    try {
+      await api("/login", { method: "POST", body: { password: $("#password").value } });
+      $("#password").value = "";
+      show("app"); load();
+    } catch (err) { $("#loginError").textContent = err.message; }
+  };
+  $("#logoutBtn").onclick = async () => { await api("/logout", { method: "POST" }).catch(() => {}); show("login"); };
+  $("#refreshBtn").onclick = () => load(true);
+
+  // ---- data ----
+  async function load(announce) {
+    try {
+      state.data = await api("/feed");
+      render();
+      if (announce) toast("Up to date");
+    } catch (err) { if (err.message !== "Please log in") toast(err.message, true); }
+  }
+
+  function scoreChip(sc, min) {
+    if (!sc) return `<span class="chip">Not scored yet</span>`;
+    const cls = sc.value >= min ? "good" : sc.value >= 4 ? "warn" : "bad";
+    return `<span class="chip ${cls}">${sc.value}/10</span><span class="chip">${esc(sc.category)}</span>`;
+  }
+  const SOURCE = { telegram: "Telegram", web: "Web", import: "Backlog" };
+  const fmt = (iso) => { try { return new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); } catch (e) { return iso; } };
+
+  function renderStats() {
+    const s = state.data.stats;
+    const pct = Math.min(100, Math.round(100 * s.approved_week / s.target));
+    $("#stats").innerHTML = `
+      <div class="stat"><b>${s.approved_week} / ${s.target}</b><span>posts approved this week</span>
+        <div class="progressbar"><i style="width:${pct}%"></i></div></div>
+      <div class="stat"><b>${s.captured_week}</b><span>notes captured this week</span></div>
+      <div class="stat"><b>${s.median_review_min ?? "–"}${s.median_review_min != null ? " min" : ""}</b><span>median time to approve (target 15)</span></div>
+      <div class="stat"><b>${s.light_edit_share != null ? Math.round(s.light_edit_share * 100) + "%" : "–"}</b><span>posted with light edits (target 60%)</span></div>`;
+  }
+
+  function newsBox(d) {
+    if (d.news) {
+      const trusted = d.news.credibility === "trusted";
+      return `<div class="box news"><div class="title">Google News hook</div>
+        <div><a href="${esc(d.news.link)}" target="_blank" rel="noopener noreferrer">${esc(d.news.title)}</a></div>
+        <div class="meta" style="margin-top:4px">${esc(d.news.publisher)} · ${esc(d.news.date)}
+          <span class="chip ${trusted ? "good" : "warn"}">${trusted ? "Trusted publisher" : "Not on trusted list"}</span></div>
+        <div class="hint" style="margin-top:4px">Open the article before posting. The link goes in the first comment, not the post.</div></div>`;
+    }
+    return `<div class="box"><div class="title">No news hook</div><div class="why hint">${esc(d.news_reason || "No trusted, relevant story found.")}</div></div>`;
+  }
+
+  function draftBlock(n) {
+    const d = n.draft;
+    if (!d) return "";
+    const busy = state.busy.has("d" + d.id);
+    const open = state.open[d.id] || "";
+    const status = { delivered: ["accent", "Waiting for review"], approved: ["good", "Approved"], rejected: ["bad", "Rejected"],
+      revised: ["", "Revised"], superseded: ["", "Replaced"] }[d.status] || ["", d.status];
+    let html = `<div class="draft">
+      <div class="meta"><span class="chip ${status[0]}">${status[1]}</span> Draft #${d.id} · v${d.version}
+        · ${d.word_count ?? "?"} words · opening ${esc(d.opening_type)} ${d.opening_name ? "(" + esc(d.opening_name) + ")" : ""}
+        · self-check ${d.qa_total}/20
+        <span class="chip ${d.lint_ok ? "good" : "warn"}">${d.lint_ok ? "Voice checks passed" : "Voice checks failing"}</span></div>
+      <div class="paper">${esc(d.text)}</div>
+      <div class="row"><button class="btn small" data-copy="post" data-id="${d.id}">Copy post</button>
+        ${d.news ? `<button class="btn small" data-copy="comment" data-id="${d.id}">Copy source comment</button>` : ""}</div>
+      <div class="kv">${newsBox(d)}`;
+    if (!d.lint_ok) html += `<div class="box bad"><div class="title">Still failing voice checks</div><ul>${d.lint_hard.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    if (d.placeholders.length) html += `<div class="box warn"><div class="title">Fill before approving</div><ul>${d.placeholders.map(x => `<li>${esc(x)}</li>`).join("")}</ul><div class="hint">Use Revise and give the facts, or ask to cut those sentences.</div></div>`;
+    if (d.verify_flags.length) html += `<div class="box"><div class="title">Verify before posting</div><ul>${d.verify_flags.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    if (d.lint_soft.length) html += `<div class="box"><div class="title">Style notes</div><ul>${d.lint_soft.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    if (d.note_to_meera) html += `<div class="box"><div class="title">Note</div>${esc(d.note_to_meera)}</div>`;
+    html += `</div>`;
+
+    if (d.status === "delivered") {
+      html += `<div class="actions">
+        <button class="btn primary" data-act="approve" data-id="${d.id}" ${busy ? "disabled" : ""}>Approve</button>
+        <button class="btn" data-open="revise" data-id="${d.id}" ${busy ? "disabled" : ""}>Revise</button>
+        <button class="btn" data-act="regenerate" data-id="${d.id}" ${busy ? "disabled" : ""}>Regenerate</button>
+        <button class="btn" data-act="angle" data-id="${d.id}" ${busy ? "disabled" : ""}>Change angle</button>
+        <button class="btn" data-act="nonews" data-id="${d.id}" ${busy ? "disabled" : ""}>No news</button>
+        <button class="btn danger" data-open="reject" data-id="${d.id}" ${busy ? "disabled" : ""}>Reject</button></div>`;
+      if (open === "revise") html += `<div class="inline"><textarea id="rev${d.id}" placeholder="What should change? e.g. shorter, open with the batch record, drop the news hook"></textarea>
+        <div class="row"><button class="btn primary small" data-act="revise" data-id="${d.id}" ${busy ? "disabled" : ""}>Revise draft</button>
+        <button class="btn small" data-open="" data-id="${d.id}">Cancel</button></div></div>`;
+      if (open === "reject") html += `<div class="inline"><div class="row">${Object.entries(REASONS).map(([k, v]) =>
+        `<button class="btn small" data-act="reject" data-reason="${k}" data-id="${d.id}" ${busy ? "disabled" : ""}>${v}</button>`).join("")}
+        <button class="btn small" data-open="" data-id="${d.id}">Cancel</button></div></div>`;
+      if (busy) html += `<p class="hint">Working on it… this can take up to a minute.</p>`;
+    } else if (d.status === "approved") {
+      html += `<div class="approved">Approved. Copy the post, paste it into LinkedIn yourself${d.news ? ", then add the source comment" : ""}.</div>`;
+      if (d.final) html += `<p class="hint">Recorded what you posted (edit ratio ${d.final.edit_ratio}).</p>`;
+      else html += `<div class="inline"><textarea id="fin${d.id}" placeholder="After posting, paste exactly what you published. It improves future drafts."></textarea>
+        <div class="row"><button class="btn small" data-act="final" data-id="${d.id}" ${busy ? "disabled" : ""}>Save what I posted</button></div></div>`;
+    } else if (d.status === "rejected" && d.reject_reason) {
+      html += `<p class="hint">Reason: ${esc(d.reject_reason)}</p>`;
+    }
+    return html + `</div>`;
+  }
+
+  function noteCard(n) {
+    const min = state.data.config.min_score;
+    const long = n.text.length > 320;
+    const expanded = state.open["n" + n.id];
+    const busy = state.busy.has("n" + n.id);
+    let verdict = "";
+    if (n.score) {
+      const drafted = !!n.draft;
+      const low = n.score.value < min;
+      verdict = `<div class="verdict"><div class="why">${esc(low ? (n.score.why_not || n.score.reason) : n.score.reason)}</div>
+        ${n.score.gap && !low ? `<div class="hint" style="margin-top:4px">Gap: ${esc(n.score.gap)}</div>` : ""}
+        ${!drafted ? `<div class="row" style="margin-top:8px">${low ? `<span class="hint">Below ${min}/10, so not drafted.</span>` : ""}
+          <button class="btn small ${low ? "" : "primary"}" data-draft="${n.id}" ${busy ? "disabled" : ""}>${busy ? "Drafting…" : low ? "Draft anyway" : "Draft this"}</button></div>` : ""}</div>`;
+    }
+    return `<article class="card note">
+      <div class="meta">Note ${n.id} · ${SOURCE[n.source] || esc(n.source)}${n.type === "voice" ? " · voice" : ""} · ${fmt(n.created_at)} ${scoreChip(n.score, min)}</div>
+      <p class="notetext ${long && !expanded ? "clamp" : ""}">${esc(n.text)}</p>
+      ${long ? `<button class="linkish" data-expand="${n.id}">${expanded ? "Show less" : "Show more"}</button>` : ""}
+      ${verdict}${draftBlock(n)}</article>`;
+  }
+
+  function render() {
+    renderStats();
+    const notes = state.data.notes;
+    $("#feed").innerHTML = notes.length ? notes.map(noteCard).join("")
+      : `<div class="empty">No notes yet. Drop one above, or post in Meera's Content Capture on Telegram.</div>`;
+  }
+
+  // ---- actions ----
+  const findDraft = (id) => state.data.notes.map(n => n.draft).find(d => d && d.id === id);
+  function replaceNote(view) {
+    const i = state.data.notes.findIndex(n => n.id === view.id);
+    if (i >= 0) state.data.notes[i] = view; else state.data.notes.unshift(view);
+  }
+
+  document.addEventListener("click", async (e) => {
+    const t = e.target.closest("button");
+    if (!t || !state.data) return;
+    if (t.dataset.expand) { state.open["n" + t.dataset.expand] = !state.open["n" + t.dataset.expand]; return render(); }
+    if (t.dataset.open !== undefined && t.dataset.id) { state.open[+t.dataset.id] = t.dataset.open; render();
+      const box = $(`#rev${t.dataset.id}`); if (box) box.focus(); return; }
+    if (t.dataset.copy) {
+      const d = findDraft(+t.dataset.id);
+      const text = t.dataset.copy === "post" ? d.text
+        : `Source: ${d.news.title}, ${d.news.publisher} (${d.news.date}). ${d.news.link}`;
+      try { await navigator.clipboard.writeText(text); toast(t.dataset.copy === "post" ? "Post copied" : "Source comment copied"); }
+      catch (err) { toast("Couldn't copy. Select the text and copy it manually.", true); }
+      return;
+    }
+    if (t.dataset.draft) {
+      const id = +t.dataset.draft; state.busy.add("n" + id); render();
+      try { replaceNote(await api(`/notes/${id}/draft`, { method: "POST" })); toast("Draft ready"); }
+      catch (err) { toast(err.message, true); }
+      finally { state.busy.delete("n" + id); render(); }
+      return;
+    }
+    if (t.dataset.act) {
+      const id = +t.dataset.id, act = t.dataset.act, body = {};
+      if (act === "revise") { body.instruction = ($(`#rev${id}`) || {}).value || ""; if (!body.instruction.trim()) return toast("Say what should change.", true); }
+      if (act === "final") { body.text = ($(`#fin${id}`) || {}).value || ""; if (!body.text.trim()) return toast("Paste what you posted.", true); }
+      if (act === "reject") body.reason = t.dataset.reason;
+      state.busy.add("d" + id); render();
+      try {
+        replaceNote(await api(`/drafts/${id}/${act}`, { method: "POST", body }));
+        state.open[id] = "";
+        toast({ approve: "Approved. Copy the post into LinkedIn.", reject: "Rejected", revise: "Revised draft ready",
+          regenerate: "New draft ready", angle: "Redrafted with the next news angle", nonews: "Redrafted without a news hook",
+          final: "Saved. It will guide future drafts." }[act] || "Done");
+      } catch (err) { toast(err.message, true); }
+      finally { state.busy.delete("d" + id); render(); }
+    }
+  });
+
+  // ---- composer with progress steps ----
+  const STEPS = ["Saving the note", "Scoring it 0-10", "Checking Google News for trusted coverage", "Drafting in Meera's voice", "Running the voice checks"];
+  const AT = [0, 1.5, 12, 20, 45];  // seconds: rough timings, only for feedback
+  $("#composer").onsubmit = async (e) => {
+    e.preventDefault();
+    const text = $("#noteText").value.trim();
+    if (!text) return;
+    const btn = $("#captureBtn"), steps = $("#steps");
+    btn.disabled = true; btn.textContent = "Working…";
+    steps.classList.remove("hidden");
+    const t0 = Date.now();
+    const paint = (doneAll) => {
+      const s = (Date.now() - t0) / 1000;
+      steps.innerHTML = STEPS.map((label, i) => {
+        const cls = doneAll ? "done" : s >= (AT[i + 1] ?? 1e9) ? "done" : s >= AT[i] ? "on" : "";
+        return `<li class="${cls}"><span class="dot"></span>${label}</li>`;
+      }).join("");
+    };
+    paint(false);
+    const timer = setInterval(() => paint(false), 500);
+    try {
+      const view = await api("/notes", { method: "POST", body: { text } });
+      clearInterval(timer); paint(true);
+      $("#noteText").value = "";
+      replaceNote(view); render();
+      const min = state.data.config.min_score;
+      toast(view.draft ? `Scored ${view.score.value}/10. Draft ready below.`
+        : view.score ? `Scored ${view.score.value}/10. ${view.score.value < min ? "Not drafted." : ""}` : "Saved.");
+      setTimeout(() => steps.classList.add("hidden"), 2500);
+    } catch (err) {
+      clearInterval(timer); steps.classList.add("hidden"); toast(err.message, true);
+    } finally { btn.disabled = false; btn.textContent = "Capture note"; }
+  };
+
+  // Keep in sync with what happens in the Telegram channel.
+  // Skipped while Meera is typing or has a Revise/Reject box open, so nothing she's writing is wiped.
+  setInterval(() => {
+    const typing = document.activeElement && document.activeElement.tagName === "TEXTAREA";
+    const openBox = Object.values(state.open).some(v => v === "revise" || v === "reject");
+    if (!document.hidden && state.data && !state.busy.size && !typing && !openBox &&
+        !$("#app").classList.contains("hidden")) load();
+  }, 20000);
+
+  // ---- boot ----
+  api("/feed").then(d => { state.data = d; show("app"); render(); }).catch(() => show("login"));
+})();
+</script>
+</body>
+</html>

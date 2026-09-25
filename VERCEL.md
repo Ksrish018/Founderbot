@@ -149,6 +149,21 @@ admins to Meera and the bot.
 | `REVIEW_CHAT_ID` | the notes channel | Set to Meera's user ID to review in a private chat with the bot instead |
 
 
+## Web dashboard
+
+The same workflow runs in a browser at your Vercel address, e.g. `https://founderbot-one.vercel.app/`.
+
+- Log in with `DASHBOARD_PASSWORD` (add it in Vercel → Environment Variables and redeploy). If you don't set one,
+  the password is your `CRON_SECRET`.
+- **Capture note**: type an idea. It's scored 0-10 and, if strong, drafted with a Google News RSS check, about a
+  minute. The progress steps show what's happening.
+- Each note shows its score and reason. Drafts show the post, the news hook with a **Trusted publisher** badge and
+  link, any placeholders to fill, and the buttons **Approve / Revise / Regenerate / Change angle / No news / Reject**.
+- After approving: **Copy post**, **Copy source comment**, and a box to record what you actually posted.
+- Everything is the same data as the Telegram channel. Notes posted in Telegram appear on the dashboard (it refreshes
+  every 20 seconds), and web actions are mirrored into the channel. Set `WEB_MIRROR_TELEGRAM=false` to stop mirroring.
+- The status JSON that used to be at `/` is now at `/api/status`.
+
 ## How the schedule works on Vercel
 
 `vercel.json` defines two cron jobs (times are UTC):

@@ -5,6 +5,7 @@ Routes
   GET  /api/cron/triage    Vercel Cron, Mon/Wed/Fri ~08:00 IST: score notes, send the shortlist
   GET  /api/cron/weekly    Vercel Cron, Sunday ~18:00 IST: weekly summary
   GET  /api/setup?key=...  One-time setup: create tables, import seed data, check Gemini, register the webhook
+  GET  /                   Web dashboard (password protected); its API lives under /api/web
 
 Nothing here posts anywhere public. The only outbound messages go to Meera's private chat with the bot.
 """
@@ -17,14 +18,16 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from telegram import BotCommand, Update
 
 from app.__main__ import setup_logging
-from app.config import DATA_DIR, get_settings, mask
+from app.config import DATA_DIR, ROOT, get_settings, mask
 from app.db import DB
 from app.gemini_client import Gemini, GeminiAuthError, GeminiUnavailable
 from app.importer import import_notes, import_published
 from app.telegram_bot import COMMANDS, build_application, job_weekly, run_triage
+from app.web import build_router
 
 settings = get_settings()
 setup_logging(settings.log_level, settings.telegram_bot_token, settings.gemini_api_key, settings.cron_secret,
@@ -69,8 +72,16 @@ def _authorised(request: Request, key: str = "") -> None:
         raise HTTPException(401, "Unauthorised")
 
 
-@app.get("/")
-def index():
+app.include_router(build_router(lambda: settings, get_db, lambda: telegram_app()))
+
+
+@app.get("/", include_in_schema=False)
+def dashboard():
+    return FileResponse(ROOT / "web" / "index.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/status")
+def status():
     return {"service": "Skinstinct content engine", "ok": True}
 
 

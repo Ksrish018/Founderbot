@@ -18,6 +18,8 @@ The full build brief is in `CLAUDE.md`. Meera's voice contract is `prompts/voice
 
 **Hosting on Vercel?** Follow [VERCEL.md](VERCEL.md) instead of the local setup below.
 
+**Web dashboard:** the same flow in a browser at your Vercel URL (password: `DASHBOARD_PASSWORD`, or `CRON_SECRET` if unset). See [VERCEL.md](VERCEL.md#web-dashboard).
+
 **Prefer reviewing in a private chat?** Set `REVIEW_CHAT_ID` to Meera's user ID. See [VERCEL.md](VERCEL.md#how-it-works-in-meeras-content-capture-one-chat).
 
 ---
