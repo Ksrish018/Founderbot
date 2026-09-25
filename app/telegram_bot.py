@@ -35,6 +35,7 @@ HELP = (
     "/notes [n] - latest notes with their ids\n"
     "/draft <note_id> - draft a specific note\n"
     "/final <text> - record what you actually posted (or reply 'final' + your text to a draft)\n"
+    "Reply to a draft with what should change to revise it\n"
     "/facts - resolve fact-bank conflicts\n"
     "/stats - progress against 3 posts a week\n"
     "/pause, /resume - scheduled shortlists\n"
@@ -69,7 +70,13 @@ def st(context: ContextTypes.DEFAULT_TYPE) -> State:
 
 def is_meera(update: Update, s: State) -> bool:
     u = update.effective_user
-    return bool(u and s.settings.meera_user_id and u.id == s.settings.meera_user_id)
+    if u and s.settings.meera_user_id and u.id == s.settings.meera_user_id:
+        return True
+    # Single-chat mode: only channel admins can post in a channel, so a post in the notes channel is Meera's.
+    # (Button taps still carry the real user, so they are checked against MEERA_USER_ID above.)
+    chat = update.effective_chat
+    return bool(s.settings.single_chat and (update.channel_post or update.edited_channel_post)
+                and chat and chat.id == s.settings.telegram_notes_chat_id)
 
 
 def meera_only(fn):
@@ -115,21 +122,59 @@ async def send(context, text: str, markup=None) -> int:
     return msg.message_id
 
 
+async def ask(context, text: str, kind: str, arg: str, placeholder: str) -> int:
+    """Ask Meera for a typed answer. She answers by replying to this message (works in the channel too);
+    in the private chat her next message also counts."""
+    s = st(context)
+    if s.settings.single_chat:
+        mid = await send(context, f"{text}\n\nReply to this message with your answer.")
+    else:
+        mid = await send(context, text, ForceReply(input_field_placeholder=placeholder))
+    s.db.set_kv(f"prompt:{mid}", json.dumps([kind, arg]))
+    s.awaiting = (kind, arg)
+    return mid
+
+
 # ---- capture ----------------------------------------------------------------
 async def on_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = st(context)
     msg = update.effective_message
     if msg is None or msg.chat_id != s.settings.telegram_notes_chat_id:
         return
+    if s.settings.single_chat:
+        text = (msg.text or "").strip()
+        if text.startswith("/"):
+            if update.channel_post:  # ignore edits of old commands
+                await run_channel_command(update, context, text)
+            return
+        if update.channel_post and msg.reply_to_message and text:
+            if await handle_reply(update, context, msg.reply_to_message.message_id, text):
+                return
     await capture.capture_message(msg, s.db, s.gemini, react=s.settings.capture_reaction)
+
+
+async def run_channel_command(update: Update, context, text: str) -> None:
+    """Single-chat mode: '/triage', '/stats@Meeras_Content_bot 5' etc. posted in the channel."""
+    parts = text.split()
+    name = parts[0][1:].split("@")[0].lower()
+    context.args = parts[1:]
+    fn = CHANNEL_COMMANDS.get(name)
+    if fn is None:
+        await update.effective_message.reply_text(f"Unknown command /{name}.\n\n{HELP}")
+        return
+    await fn(update, context)
 
 
 # ---- commands ---------------------------------------------------------------
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = st(context)
-    uid = update.effective_user.id
+    uid = update.effective_user.id if update.effective_user else None
+    if not s.settings.meera_user_id and uid is None:
+        await update.effective_message.reply_text(
+            "To get your user ID, open a private chat with the bot and send /start there.")
+        return
     if not s.settings.meera_user_id:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"Your Telegram user ID is {uid}.\nAdd MEERA_USER_ID={uid} to the bot's settings: in Vercel, "
             "Settings → Environment Variables, then redeploy (or in .env if running locally, then restart).")
         return
@@ -140,13 +185,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     admin = await bot_is_channel_admin(context, s)
     days, at = parse_schedule(s.settings.triage_schedule)
     paused = s.db.get_kv("triage_paused") == "1"
-    await update.message.reply_text(
-        f"Hi Meera. Your user ID is {uid}.\n\n"
+    await update.effective_message.reply_text(
+        f"Hi Meera.{f' Your user ID is {uid}.' if uid else ''}\n\n"
         f"Setup status\n"
         f"Notes channel {s.settings.telegram_notes_chat_id}: {'bot is admin ✅' if admin else 'bot is NOT admin ❌'}\n"
         f"Gemini: {'ready (' + s.gemini.model + ') ✅' if s.gemini_ok or s.db.get_kv('gemini_model') else 'not checked yet (send /health)'}\n"
         f"Notes in DB: {n} · voice exemplars: {e}\n"
-        f"Shortlists: {s.settings.triage_schedule} {s.settings.timezone}{' (paused)' if paused else ''}\n\n"
+        f"Shortlists: {s.settings.triage_schedule} {s.settings.timezone}{' (paused)' if paused else ''}\n"
+        f"Reviews happen in: {'this channel (single-chat mode)' if s.settings.single_chat else 'this private chat'}\n\n"
         + HELP)
 
 
@@ -160,7 +206,7 @@ async def bot_is_channel_admin(context, s: State) -> bool:
 
 @meera_only
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(HELP)
+    await update.effective_message.reply_text(HELP)
 
 
 @meera_only
@@ -191,7 +237,7 @@ async def cmd_health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         lines.append(f"✅ Database: {n} notes")
     except Exception as e:
         lines.append(f"❌ Database: {e.__class__.__name__}")
-    await update.message.reply_text("\n".join(lines))
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 @meera_only
@@ -200,19 +246,19 @@ async def cmd_notes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     n = int(context.args[0]) if context.args and context.args[0].isdigit() else 10
     rows = s.db.latest_notes(min(n, 30))
     if not rows:
-        await update.message.reply_text("No notes yet.")
+        await update.effective_message.reply_text("No notes yet.")
         return
     lines = []
     for r in rows:
         body = s.db.note_body(r).replace("\n", " ")
         lines.append(f"#{r['id']} [{r['status']}] ({r['type']}, {r['source']}) {body[:70]}{'…' if len(body) > 70 else ''}")
     for chunk in split_text("\n".join(lines)):
-        await update.message.reply_text(chunk)
+        await update.effective_message.reply_text(chunk)
 
 
 @meera_only
 async def cmd_triage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Scoring new notes…")
+    await update.effective_message.reply_text("Scoring new notes…")
     await run_triage(context, announce_empty=True)
 
 
@@ -220,7 +266,7 @@ async def cmd_triage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_draft(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = st(context)
     if not context.args or not context.args[0].isdigit() or not s.db.note(int(context.args[0])):
-        await update.message.reply_text("Usage: /draft <note_id>  (see /notes for ids)")
+        await update.effective_message.reply_text("Usage: /draft <note_id>  (see /notes for ids)")
         return
     await start_draft(context, [int(context.args[0])])
 
@@ -237,43 +283,42 @@ async def cmd_facts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append("")
         buttons.append(Btn(f"{'Update' if c['status'] == 'canonical' else 'Resolve'} {c['key']}",
                            callback_data=f"f:{c['key']}"))
-    await update.message.reply_text("\n".join(lines)[:TG_LIMIT], reply_markup=Kb([buttons[i:i + 2]
+    await update.effective_message.reply_text("\n".join(lines)[:TG_LIMIT], reply_markup=Kb([buttons[i:i + 2]
                                                                                    for i in range(0, len(buttons), 2)]))
 
 
 @meera_only
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = st(context)
-    await update.message.reply_text(metrics.format_stats(metrics.compute(s.db, s.settings)))
+    await update.effective_message.reply_text(metrics.format_stats(metrics.compute(s.db, s.settings)))
 
 
 @meera_only
 async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     st(context).db.set_kv("triage_paused", "1")
-    await update.message.reply_text("Scheduled shortlists paused. /triage still works. /resume to restart.")
+    await update.effective_message.reply_text("Scheduled shortlists paused. /triage still works. /resume to restart.")
 
 
 @meera_only
 async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = st(context)
     s.db.set_kv("triage_paused", "0")
-    await update.message.reply_text(f"Scheduled shortlists resumed: {s.settings.triage_schedule} {s.settings.timezone}.")
+    await update.effective_message.reply_text(f"Scheduled shortlists resumed: {s.settings.triage_schedule} {s.settings.timezone}.")
 
 
 @meera_only
 async def cmd_final(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     s = st(context)
-    text = update.message.text.partition(" ")[2].strip()
+    text = (update.effective_message.text or "").partition(" ")[2].strip()
     row = s.db.one("SELECT d.* FROM drafts d LEFT JOIN finals f ON f.draft_id = d.id WHERE d.status='approved' "
                    "AND f.id IS NULL ORDER BY d.decided_at DESC LIMIT 1") or \
         s.db.one("SELECT * FROM drafts WHERE status='approved' ORDER BY decided_at DESC LIMIT 1")
     if not row:
-        await update.message.reply_text("There's no approved draft to attach this to yet.")
+        await update.effective_message.reply_text("There's no approved draft to attach this to yet.")
         return
     if not text:
-        s.awaiting = ("final", str(row["id"]))
-        await update.message.reply_text(f"Paste exactly what you posted for draft #{row['id']}.",
-                                        reply_markup=ForceReply(input_field_placeholder="What you posted"))
+        await ask(context, f"Paste exactly what you posted for draft #{row['id']}.", "final", str(row["id"]),
+                  "What you posted")
         return
     await store_final(update, s, row, text)
 
@@ -287,7 +332,7 @@ async def store_final(update: Update, s: State, draft, text: str) -> None:
              "ON CONFLICT(name) DO UPDATE SET text=excluded.text",
              (f"approved_{draft['id']}", meta.get("category"), text))
     s.db.event("final", draft_id=draft["id"], edit_ratio=ratio)
-    await update.message.reply_text(
+    await update.effective_message.reply_text(
         f"Saved what you posted for draft #{draft['id']}. Edit ratio {ratio:.2f} "
         f"({'light edit' if ratio <= 0.15 else 'substantial edit'}). It's now a voice exemplar for future drafts.")
 
@@ -491,9 +536,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.edit_message_reply_markup(None)
         await send_shortlist(context, offset=int(arg))
     elif kind == "f":
-        s.awaiting = ("fact", arg)
-        await send(context, f"Reply with the canonical version for {arg}. I'll store it with today's date and "
-                            "drafts will be allowed to use it.", ForceReply(input_field_placeholder=f"{arg} answer"))
+        await ask(context, f"Send the canonical version for {arg}. I'll store it with today's date and drafts "
+                           "will be allowed to use it.", "fact", arg, f"{arg} answer")
     elif kind in ("a", "rv", "rg", "ca", "nn", "rj", "rr"):
         await on_draft_action(update, context, kind, int(arg), parts[2] if len(parts) > 2 else None)
 
@@ -539,9 +583,8 @@ async def on_draft_action(update: Update, context, kind: str, draft_id: int, ext
         await send(context, tail + "After you post, send /final followed by what you actually posted "
                                    "(or reply 'final' + your text to the post above), so I can learn from your edits.")
     elif kind == "rv":
-        s.awaiting = ("revise", str(draft_id))
-        await send(context, f"What should change in draft #{draft_id}?",
-                   ForceReply(input_field_placeholder="e.g. shorter, drop the news hook, open with the batch record"))
+        await ask(context, f"What should change in draft #{draft_id}?", "revise", str(draft_id),
+                  "e.g. shorter, drop the news hook, open with the batch record")
     elif kind == "rg":
         meta = json.loads(d["meta_json"] or "{}")
         avoid = [meta.get("opening_type")] if meta.get("opening_type") in OPENING_TYPES else []
@@ -572,24 +615,10 @@ async def on_draft_action(update: Update, context, kind: str, draft_id: int, ext
 
 
 # ---- free text from Meera ---------------------------------------------------------
-@meera_only
-async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def answer(update: Update, context, kind: str, arg: str, text: str) -> None:
     s = st(context)
-    msg = update.message
-    text = (msg.text or "").strip()
-
-    if msg.reply_to_message and text.lower().startswith("final"):
-        d = s.db.draft_by_message(msg.reply_to_message.message_id)
-        body = text[5:].lstrip(" :\n")
-        if d and body:
-            await store_final(update, s, d, body)
-            return
-
-    awaiting, s.awaiting = s.awaiting, None
-    if awaiting is None:
-        await msg.reply_text("I only act on buttons and commands. /help lists them.")
-        return
-    kind, arg = awaiting
+    msg = update.effective_message
+    s.awaiting = None
     if kind == "revise":
         await msg.reply_text("Revising…")
         await redraft(context, int(arg), "revise", instruction=text)
@@ -601,6 +630,46 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await msg.reply_text(f"Unknown fact key {arg}.")
     elif kind == "final":
         await store_final(update, s, s.db.draft(int(arg)), text)
+
+
+async def handle_reply(update: Update, context, replied_id: int, text: str) -> bool:
+    """A reply to one of the bot's questions or drafts. Returns False if it wasn't one (then it's a note)."""
+    s = st(context)
+    prompt = s.db.get_kv(f"prompt:{replied_id}")
+    if prompt:
+        kind, arg = json.loads(prompt)
+        s.db.set_kv(f"prompt:{replied_id}", None)
+        await answer(update, context, kind, arg, text)
+        return True
+    d = s.db.draft_by_message(replied_id)
+    if d is None:
+        return False
+    if text.lower().startswith("final"):
+        body = text[5:].lstrip(" :\n")
+        if body:
+            await store_final(update, s, d, body)
+        else:
+            await update.effective_message.reply_text("Put the text you posted after the word final.")
+        return True
+    if d["status"] != "delivered":
+        await update.effective_message.reply_text(f"Draft #{d['id']} is no longer current ({d['status']}).")
+        return True
+    await answer(update, context, "revise", str(d["id"]), text)
+    return True
+
+
+@meera_only
+async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    s = st(context)
+    msg = update.effective_message
+    text = (msg.text or "").strip()
+    if msg.reply_to_message and await handle_reply(update, context, msg.reply_to_message.message_id, text):
+        return
+    awaiting = s.awaiting
+    if awaiting is None:
+        await msg.reply_text("I only act on buttons and commands. /help lists them.")
+        return
+    await answer(update, context, awaiting[0], awaiting[1], text)
 
 
 # ---- scheduled jobs -----------------------------------------------------------------
@@ -625,6 +694,12 @@ async def job_transcripts(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ---- wiring ---------------------------------------------------------------------
+CHANNEL_COMMANDS = {
+    "start": cmd_start, "help": cmd_help, "health": cmd_health, "notes": cmd_notes, "triage": cmd_triage,
+    "draft": cmd_draft, "facts": cmd_facts, "stats": cmd_stats, "pause": cmd_pause, "resume": cmd_resume,
+    "final": cmd_final,
+}
+
 COMMANDS = [
     ("triage", "Score notes and send the shortlist"), ("notes", "Latest notes"),
     ("draft", "Draft a note by id"), ("final", "Record what you posted"), ("facts", "Resolve fact conflicts"),

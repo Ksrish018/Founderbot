@@ -80,6 +80,11 @@ class Settings(BaseSettings):
         return self.review_chat_id or self.meera_user_id
 
     @property
+    def single_chat(self) -> bool:
+        """REVIEW_CHAT_ID set to the notes channel: notes, shortlists, drafts and commands all live in the channel."""
+        return self.review_chat == self.telegram_notes_chat_id
+
+    @property
     def fallback_models(self) -> list[str]:
         return [m.strip() for m in self.gemini_fallback_models.split(",") if m.strip()]
 
