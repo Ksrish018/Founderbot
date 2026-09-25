@@ -286,6 +286,11 @@ h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spa
       <div class="kv">${newsBox(d)}`;
     if (!d.lint_ok) html += `<div class="box bad"><div class="title">Still failing voice checks</div><ul>${d.lint_hard.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
     if (d.placeholders.length) html += `<div class="box warn"><div class="title">Fill before approving</div><ul>${d.placeholders.map(x => `<li>${esc(x)}</li>`).join("")}</ul><div class="hint">Use Revise and give the facts, or ask to cut those sentences.</div></div>`;
+    const fc = d.fact_check;
+    if (fc) html += fc.error ? `<div class="box warn"><div class="title">Fact check didn't run</div>${esc(fc.error)}</div>`
+      : fc.remaining && fc.remaining.length ? `<div class="box warn"><div class="title">Fact check: check these claims</div><ul>${fc.remaining.map(p =>
+          `<li>“${esc(p.claim)}” <span class="hint">(${esc(p.issue.replace(/_/g, " "))}: ${esc(p.fix)})</span></li>`).join("")}</ul></div>`
+      : `<div class="box"><div class="title">Fact check passed</div><span class="hint">Every claim traces to the note, the fact bank or the news snippet${fc.found ? `; ${fc.found} fixed automatically` : ""}.</span></div>`;
     if (d.verify_flags.length) html += `<div class="box"><div class="title">Verify before posting</div><ul>${d.verify_flags.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
     if (d.lint_soft.length) html += `<div class="box"><div class="title">Style notes</div><ul>${d.lint_soft.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
     if (d.note_to_meera) html += `<div class="box"><div class="title">Note</div>${esc(d.note_to_meera)}</div>`;

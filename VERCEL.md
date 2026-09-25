@@ -128,6 +128,11 @@ Meera drops a note  ->  Telegram receives it (voice is transcribed)  ->  Gemini 
 | A **reply** to one of the bot's questions (after tapping Revise, or in `/facts`) | Answers the question |
 | Taps a button (Approve, Revise, …) | Only works for the account in `MEERA_USER_ID` |
 
+**Fact check.** After each draft, a separate strict Gemini call traces every claim to Meera's note, the canonical
+facts or the news snippet. Overstated hedges ("measurably", "proven"), facts used for the wrong purpose, and claims
+with no source get one automatic fix; anything still unresolved appears on the review card as `[CHECK CLAIM: ...]`.
+It reduces invented claims but doesn't replace Meera's own read-through. Turn it off with `FACT_CHECK=false`.
+
 **Verified sources.** News hooks come only from Google News RSS, and by default only from publishers listed as
 trusted in `config/news_sources.yaml` (Indian national and business press, regulators such as CDSCO and PIB,
 Reuters/BBC, science journals, beauty trade press). Market-research press releases and paid wires are always

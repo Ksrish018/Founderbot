@@ -103,6 +103,7 @@ def draft_view(db: DB, d) -> dict:
         "lint_ok": lint.get("ok", True), "lint_hard": lint.get("hard", []), "lint_soft": lint.get("soft", []),
         "retries": d["lint_retries"], "placeholders": meta.get("placeholders_in_text") or [],
         "verify_flags": meta.get("verify_flags") or [], "note_to_meera": meta.get("note_to_meera") or "",
+        "fact_check": meta.get("fact_check"),
         "revision_instruction": d["revision_instruction"], "reject_reason": d["reject_reason"],
         "delivered_at": d["delivered_at"], "decided_at": d["decided_at"],
         "news": ({"title": item["title"], "publisher": item["source"], "domain": item["source_domain"],

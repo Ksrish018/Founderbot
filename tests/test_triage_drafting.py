@@ -108,7 +108,9 @@ async def test_revision_keeps_chain_and_short_mode(db, fake, settings):
     assert db.draft(first)["status"] == "revised"
     assert d2["version"] == 2 and d2["parent_draft_id"] == first
     assert json.loads(d2["meta_json"])["short"] is True
-    assert "Revision wrapper" in fake.calls[-1]["system"] and "MEERA'S INSTRUCTION" in fake.calls[-1]["prompt"]
+    revise_call = [c for c in fake.calls if c["purpose"] == "draft:revise"][-1]
+    assert "Revision wrapper" in revise_call["system"] and "MEERA'S INSTRUCTION" in revise_call["prompt"]
+    assert fake.calls[-1]["purpose"] == "audit" and "Make it shorter" in fake.calls[-1]["prompt"]
 
 
 def test_approve_guard_and_edit_ratio():
@@ -132,3 +134,48 @@ def test_facts_resolve_is_stored_in_db_not_yaml(db):
     assert db.one("SELECT new_status FROM facts_log WHERE fact_key='C1'")["new_status"] == "canonical"
     facts.resolve(db, "C1", "Updated answer.")
     assert "Updated answer." in facts.canonical_block(facts.load(db))
+
+
+async def test_fact_check_fixes_unsupported_claims_once(db, fake, settings):
+    nid = add_notes(db, 1)[0]
+    req = drafting.start_request(db, [nid])
+    fake.queue("draft", draft_json(GOOD_POST))                                        # first draft
+    fake.queue("audit", {"problems": [{"claim": "measurably increasing photosensitivity", "issue": "hedge_upgraded",
+                                       "fix": "say 'can increase'"}]})
+    fake.queue("draft", draft_json(GOOD_POST.replace("Batch fourteen", "Batch 14")))  # fixed draft
+    fake.queue("audit", {"problems": []})                                             # re-check passes
+    did = await drafting.generate(db, fake, settings, req)
+    d = db.draft(did)
+    meta = json.loads(d["meta_json"])
+    assert meta["fact_check"] == {"found": 1, "fixed": True, "remaining": []}
+    assert d["post_text"].startswith("Batch 14")
+    purposes = [c["purpose"] for c in fake.calls]
+    assert purposes == ["draft:draft", "audit", "draft:factfix", "audit"]
+    assert "measurably increasing photosensitivity" in fake.calls[2]["prompt"]
+    assert "MEERA'S NOTE(S)" in fake.calls[1]["prompt"] and "CANONICAL FACTS" in fake.calls[1]["prompt"]
+
+
+async def test_fact_check_leftovers_become_verify_flags(db, fake, settings):
+    nid = add_notes(db, 1)[0]
+    req = drafting.start_request(db, [nid])
+    fake.queue("draft", draft_json(GOOD_POST))
+    bad = {"claim": "many of our customers layer other brands", "issue": "unsupported", "fix": "remove"}
+    fake.queue("audit", {"problems": [bad]})
+    fake.queue("draft", draft_json(GOOD_POST))
+    fake.queue("audit", {"problems": [bad]})
+    did = await drafting.generate(db, fake, settings, req)
+    meta = json.loads(db.draft(did)["meta_json"])
+    assert meta["fact_check"]["remaining"] == [bad]
+    assert any(f.startswith("[CHECK CLAIM (unsupported): many of our customers") for f in meta["verify_flags"])
+
+
+async def test_fact_fix_never_replaces_a_voice_clean_draft_with_a_failing_one(db, fake, settings):
+    nid = add_notes(db, 1)[0]
+    req = drafting.start_request(db, [nid])
+    fake.queue("draft", draft_json(GOOD_POST))
+    fake.queue("audit", {"problems": [{"claim": "x", "issue": "unsupported", "fix": "remove"}]})
+    fake.queue("draft", draft_json("Too short and hyped! "))
+    did = await drafting.generate(db, fake, settings, req)
+    d = db.draft(did)
+    assert d["post_text"] == GOOD_POST and json.loads(d["lint_json"])["ok"]
+    assert json.loads(d["meta_json"])["fact_check"]["fixed"] is False

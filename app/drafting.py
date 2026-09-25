@@ -9,9 +9,9 @@ import re
 from . import exemplars, facts, news
 from .config import Settings
 from .db import DB, iso
-from .gemini_client import Gemini
+from .gemini_client import Gemini, GeminiUnavailable
 from .linter import extract_verify, find_placeholders, lint
-from .schemas import DraftOut, system_for
+from .schemas import DraftOut, FactAudit, load_prompt, system_for
 
 log = logging.getLogger(__name__)
 MAX_LINT_RETRIES = 2
@@ -122,6 +122,40 @@ async def generate(db: DB, gemini: Gemini, settings: Settings, request_id: int, 
                       f"\n\nPREVIOUS ATTEMPT:\n{text}")
 
     assert out is not None and result is not None
+
+    fact_meta = None
+    if settings.fact_check:
+        sources = sources_block(db, request_id, note_ids, instruction)
+        try:
+            problems, c = await audit(gemini, settings, sources, out.post_text)
+            tin, tout, cost = tin + c[0], tout + c[1], cost + c[2]
+            fact_meta = {"found": len(problems), "fixed": False, "remaining": problems}
+            if problems:
+                fix_prompt = (f"{base_prompt}\n\nCURRENT DRAFT:\n{out.post_text}\n\nA FACT CHECK FOUND CLAIMS THAT DO "
+                              "NOT TRACE TO THE ALLOWED SOURCES. Rewrite the draft fixing every one as suggested: remove "
+                              "it, soften it to match the source, or use a [SOURCE NEEDED: ...] / [DATA NEEDED: ...] "
+                              "placeholder. Keep everything else as it is.\n- " +
+                              "\n- ".join(f'"{p["claim"]}" ({p["issue"]}): {p["fix"]}' for p in problems))
+                res2 = await gemini.generate_json(purpose="draft:factfix", prompt=fix_prompt, schema=DraftOut,
+                                                  system=system, temperature=0.3)
+                tin, tout, cost = tin + res2.tokens_in, tout + res2.tokens_out, cost + res2.cost
+                fixed = res2.data
+                text2, moved2 = extract_verify(fixed.post_text.strip())
+                r2 = lint(text2, short=short, allow_hashtags=settings.allow_hashtags,
+                          opening_type=fixed.opening_type, recent_opening_types=recents)
+                if r2.ok or not result.ok:   # never trade a voice-clean draft for one that fails the voice checks
+                    fixed.post_text = text2
+                    fixed.verify_flags = list(dict.fromkeys([*out.verify_flags, *fixed.verify_flags, *moved2]))
+                    out, result = fixed, r2
+                    remaining, c = await audit(gemini, settings, sources, out.post_text)
+                    tin, tout, cost = tin + c[0], tout + c[1], cost + c[2]
+                    fact_meta = {"found": len(problems), "fixed": True, "remaining": remaining}
+        except GeminiUnavailable as e:
+            log.warning("Fact check skipped: %s", e)
+            fact_meta = {"error": "Fact check could not run; verify the claims yourself before posting."}
+        for p in (fact_meta or {}).get("remaining") or []:
+            out.verify_flags.append(f"[CHECK CLAIM ({p['issue'].replace('_', ' ')}): {p['claim'][:180]}]")
+
     item = news.current_item(db, request_id)
     if item is not None and not any("open link" in f.lower() for f in out.verify_flags):
         out.verify_flags.append("[VERIFY: open link before posting]")
@@ -129,6 +163,7 @@ async def generate(db: DB, gemini: Gemini, settings: Settings, request_id: int, 
     meta["word_count"] = result.word_count
     meta["short"] = short
     meta["placeholders_in_text"] = find_placeholders(out.post_text)
+    meta["fact_check"] = fact_meta
 
     version = (parent["version"] + 1) if parent else 1
     draft_id = db.run(
@@ -143,6 +178,22 @@ async def generate(db: DB, gemini: Gemini, settings: Settings, request_id: int, 
                ("revised" if mode == "revise" else "superseded", iso(), parent_id))
     db.event("draft_created", draft_id=draft_id, mode=mode, lint_ok=result.ok, retries=attempt)
     return draft_id
+
+
+def sources_block(db: DB, request_id: int, note_ids: list[int], instruction: str | None) -> str:
+    parts = ["MEERA'S NOTE(S):\n" + notes_text(db, note_ids), facts.canonical_block(facts.load(db)),
+             news.item_block(news.current_item(db, request_id))]
+    if instruction:
+        parts.append(f"MEERA'S REVISION INSTRUCTION (her own words; facts she states here are allowed):\n{instruction}")
+    return "\n\n".join(parts)
+
+
+async def audit(gemini: Gemini, settings: Settings, sources: str, draft_text: str) -> tuple[list[dict], tuple]:
+    """Returns (problems, (tokens_in, tokens_out, cost))."""
+    ap, _ = load_prompt("audit")
+    res = await gemini.generate_json(purpose="audit", prompt=f"{ap}\n\n{sources}\n\nDRAFT:\n{draft_text}",
+                                     schema=FactAudit, temperature=0.1)
+    return [p.model_dump() for p in res.data.problems], (res.tokens_in, res.tokens_out, res.cost)
 
 
 def unresolved_placeholders(text: str) -> list[str]:

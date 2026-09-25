@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Professor's workflow: every new note is scored straight away; notes scoring >= MIN_SHORTLIST_SCORE are drafted
     # (with a Google News check) and sent for review. Low scores are rejected with a reason. Meera still approves.
     auto_draft_on_capture: bool = True
+    # After drafting, a separate strict call traces every claim to the note, canonical facts or news snippet;
+    # problems get one automatic fix, and anything left is flagged on the review card.
+    fact_check: bool = True
     auto_draft_top_n: int = 0
     allow_hashtags: bool = False
     capture_reaction: bool = False

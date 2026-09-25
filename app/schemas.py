@@ -83,6 +83,17 @@ class DraftOut(BaseModel):
     note_to_meera: str = ""
 
 
+# ---- fact check -------------------------------------------------------------
+class ClaimProblem(BaseModel):
+    claim: str
+    issue: Literal["unsupported", "hedge_upgraded", "misused_fact", "news_overreach"]
+    fix: str
+
+
+class FactAudit(BaseModel):
+    problems: list[ClaimProblem] = []
+
+
 # ---- prompt files ---------------------------------------------------------
 @lru_cache
 def load_prompt(name: str) -> tuple[str, str]:

@@ -500,6 +500,15 @@ def card_text(s: State, d, meta: dict, lint: dict) -> str:
                                                if d["lint_retries"] else ""))
     if lint.get("soft"):
         lines.append("Warnings:\n- " + "\n- ".join(lint["soft"]))
+    fc = meta.get("fact_check")
+    if fc:
+        if fc.get("error"):
+            lines.append(f"⚠️ {fc['error']}")
+        elif fc.get("remaining"):
+            lines.append(f"⚠️ Fact check: {len(fc['remaining'])} claim(s) still need checking (listed under Verify).")
+        else:
+            lines.append("✅ Fact check: every claim traces to your note, the fact bank or the news snippet"
+                         + (f" ({fc['found']} fixed automatically)" if fc.get("found") else ""))
     if item:
         badge = {"trusted": "✅ trusted publisher", "unknown": "⚠️ publisher not on the trusted list"}.get(
             item["credibility"] or "", "⚠️ publisher not checked")

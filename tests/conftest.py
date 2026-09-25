@@ -44,6 +44,8 @@ class FakeGemini:
     async def generate_json(self, *, purpose, prompt, schema, system=None, temperature=0.2):
         self.calls.append({"purpose": purpose, "prompt": prompt, "system": system})
         key = next((k for k in self.responses if purpose.startswith(k) and self.responses[k]), None)
+        if key is None and purpose == "audit":
+            return CallResult(schema.model_validate({"problems": []}), self.model, 10, 5, 0.0001, "")
         if key is None:
             raise AssertionError(f"No fake response queued for {purpose}")
         obj = self.responses[key].popleft()
