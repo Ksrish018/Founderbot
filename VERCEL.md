@@ -76,8 +76,8 @@ in your browser, with your project's domain and your cron secret:
 https://<your-project>.vercel.app/api/setup?key=<CRON_SECRET>
 ```
 
-It creates the tables, imports the 5 notes and 15 published pieces, checks Gemini, and tells Telegram where to send
-updates. You'll see something like:
+It creates the tables, loads the 15 published pieces as voice examples, checks Gemini, and tells Telegram where to
+send updates. Add `&import_notes=1` to the link to also import the 5 backlog notes from `data/notes/`. You'll see something like:
 
 ```json
 {

@@ -17,7 +17,7 @@ import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from telegram import BotCommand, Update
 
@@ -127,8 +127,9 @@ async def cron_weekly(request: Request):
 
 
 @app.get("/api/setup")
-async def setup(request: Request, key: str = ""):
-    """Safe to run more than once. Visit https://<your-app>.vercel.app/api/setup?key=<CRON_SECRET>."""
+async def setup(request: Request, key: str = "", import_notes_: int = Query(0, alias="import_notes")):
+    """Safe to run more than once. Visit https://<your-app>.vercel.app/api/setup?key=<CRON_SECRET>.
+    Voice exemplars are always (re)loaded; the 5 backlog notes only with &import_notes=1."""
     _authorised(request, key)
     report: dict = {}
     missing = [n for n, v in [("TELEGRAM_BOT_TOKEN", settings.telegram_bot_token),
@@ -138,7 +139,7 @@ async def setup(request: Request, key: str = ""):
 
     db = get_db()
     report["database"] = "postgres" if db.is_pg else "sqlite (local only)"
-    report["notes_imported_now"] = import_notes(db, DATA_DIR / "notes")
+    report["notes_imported_now"] = import_notes(db, DATA_DIR / "notes") if import_notes_ else 0
     report["exemplars_imported_now"] = import_published(db, DATA_DIR / "published")
     report["notes_total"] = db.one("SELECT COUNT(*) c FROM notes")["c"]
     report["exemplars_total"] = db.one("SELECT COUNT(*) c FROM exemplars")["c"]
