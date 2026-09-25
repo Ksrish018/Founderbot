@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS news_items (
     id {pk},
     draft_request_id BIGINT REFERENCES draft_requests(id),
     query TEXT, title TEXT, source TEXT, link TEXT, published_at TEXT, snippet TEXT,
-    chosen INTEGER DEFAULT 0
+    chosen INTEGER DEFAULT 0, source_domain TEXT, credibility TEXT
 );
 CREATE TABLE IF NOT EXISTS drafts (
     id {pk},
@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS locks (key TEXT PRIMARY KEY, until TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS processed_updates (update_id BIGINT PRIMARY KEY, created_at TEXT NOT NULL)
 """
+
+# Columns added after the first deploy: (table, column, type). Added to existing databases on startup.
+MIGRATIONS = [("news_items", "source_domain", "TEXT"), ("news_items", "credibility", "TEXT")]
 
 # Tables without an `id` column: inserts into these must not ask Postgres for RETURNING id.
 NO_ID_TABLES = {"kv", "locks", "processed_updates", "fact_resolutions"}
@@ -208,8 +211,14 @@ class DB:
             # that API (anon/authenticated roles) completely; the bot connects as the table owner, which bypasses RLS.
             for table in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", ddl):
                 self.conn.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+            for table, col, typ in MIGRATIONS:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}")
         else:
             self.conn.executescript(ddl)
+            for table, col, typ in MIGRATIONS:
+                cols = {r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()}
+                if col not in cols:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
             self.conn.commit()
 
     def close(self) -> None:

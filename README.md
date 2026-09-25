@@ -2,19 +2,23 @@
 
 A Telegram bot that turns Meera's private channel notes into LinkedIn drafts in her voice.
 
-- Meera keeps dropping notes (text or voice) into her private Telegram channel, exactly as she does now.
-- Three mornings a week (Mon/Wed/Fri 08:00 IST) the bot sends her a shortlist of the strongest notes.
-- She taps **Draft this**. The bot looks for a current news angle on Google News, writes a draft in her voice,
-  checks it against her voice rules, and sends it to her private chat with the bot.
-- She taps **Approve**, **Revise**, **Regenerate**, **Change angle**, **No news** or **Reject**.
-- When she approves, she gets a clean copy-ready version and **pastes it into LinkedIn herself**.
-  The bot never posts anywhere.
+Everything happens in one Telegram channel, **Meera's Content Capture**, following the Case 1 components map:
+
+- Meera drops a text or voice note into the channel, exactly as she does now. Voice notes are transcribed.
+- Gemini scores the note 0-10 straight away. Low scores are rejected with a one-line reason.
+- For strong notes, the bot searches **Google News RSS** for recent coverage from trusted publishers
+  (`config/news_sources.yaml`), then drafts a LinkedIn post in her voice, with the news hook if one genuinely fits.
+- The draft and a review card arrive as a reply under her note: **Approve**, **Revise**, **Regenerate**,
+  **Change angle**, **No news** or **Reject**. Replying to the draft revises it.
+- When she approves, she gets a copy-ready post plus a first comment with the source link, and
+  **pastes it into LinkedIn herself**. The bot never posts anywhere.
+- Mon/Wed/Fri at 08:00 IST it also sends a shortlist of any strong notes not drafted yet.
 
 The full build brief is in `CLAUDE.md`. Meera's voice contract is `prompts/voice_skills.txt`.
 
 **Hosting on Vercel?** Follow [VERCEL.md](VERCEL.md) instead of the local setup below.
 
-**Want everything in one chat?** Set `REVIEW_CHAT_ID` to the notes channel ID to run in single-chat mode: notes, shortlists, drafts and commands all live in the channel. See [VERCEL.md](VERCEL.md#single-chat-mode-everything-in-meeras-content-capture).
+**Prefer reviewing in a private chat?** Set `REVIEW_CHAT_ID` to Meera's user ID. See [VERCEL.md](VERCEL.md#how-it-works-in-meeras-content-capture-one-chat).
 
 ---
 

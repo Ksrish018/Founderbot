@@ -49,3 +49,20 @@ def test_pg_url_password_with_special_characters_is_encoded():
         assert parts.username == "postgres.ref"
         assert unquote(parts.password) == unquote(pw)
         assert "sslmode=require" in url
+
+
+
+def test_existing_database_gets_new_columns(tmp_path):
+    import sqlite3
+
+    from app.db import DB
+    path = tmp_path / "old.db"
+    c = sqlite3.connect(path)
+    c.execute("CREATE TABLE news_items (id INTEGER PRIMARY KEY AUTOINCREMENT, draft_request_id INTEGER, query TEXT, "
+              "title TEXT, source TEXT, link TEXT, published_at TEXT, snippet TEXT, chosen INTEGER DEFAULT 0)")
+    c.commit()
+    c.close()
+    db = DB(path)
+    cols = {r[1] for r in db.conn.execute("PRAGMA table_info(news_items)").fetchall()}
+    assert {"source_domain", "credibility"} <= cols
+    DB(path)  # running again is harmless

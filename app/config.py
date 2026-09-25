@@ -50,7 +50,14 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Kolkata"
     triage_schedule: str = "MON,WED,FRI@08:00"
     shortlist_size: int = 4
-    news_lookback_days: int = 14
+    news_lookback_days: int = 30
+    # If nothing from a trusted publisher turns up in that window, look back this far before giving up.
+    news_max_lookback_days: int = 60
+    # Only cite publishers listed as trusted in config/news_sources.yaml (blocked ones are never used).
+    news_trusted_only: bool = True
+    # Professor's workflow: every new note is scored straight away; notes scoring >= MIN_SHORTLIST_SCORE are drafted
+    # (with a Google News check) and sent for review. Low scores are rejected with a reason. Meera still approves.
+    auto_draft_on_capture: bool = True
     auto_draft_top_n: int = 0
     allow_hashtags: bool = False
     capture_reaction: bool = False
@@ -77,7 +84,9 @@ class Settings(BaseSettings):
 
     @property
     def review_chat(self) -> int | None:
-        return self.review_chat_id or self.meera_user_id
+        """Where shortlists and drafts go. Default: the notes channel itself (single chat).
+        Set REVIEW_CHAT_ID to Meera's user ID to review in a private chat with the bot instead."""
+        return self.review_chat_id or self.telegram_notes_chat_id
 
     @property
     def single_chat(self) -> bool:

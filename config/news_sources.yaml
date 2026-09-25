@@ -1,0 +1,104 @@
+# Which Google News publishers a draft may cite. Matched on the publisher's domain (Google News gives it for every
+# item), including subdomains: "indiatimes.com" would match economictimes.indiatimes.com.
+#
+# NEWS_TRUSTED_ONLY=true (default): only `trusted` publishers are offered to the model as a news hook.
+# NEWS_TRUSTED_ONLY=false: unknown publishers are allowed too, but flagged on the review card.
+# `blocked` publishers are never used, in either mode.
+
+trusted:
+  # Indian national and business press
+  - timesofindia.indiatimes.com
+  - economictimes.indiatimes.com
+  - thehindu.com
+  - thehindubusinessline.com
+  - livemint.com
+  - business-standard.com
+  - hindustantimes.com
+  - indianexpress.com
+  - ndtv.com
+  - moneycontrol.com
+  - financialexpress.com
+  - cnbctv18.com
+  - indiatoday.in
+  - businesstoday.in
+  - theprint.in
+  - scroll.in
+  - deccanherald.com
+  - telegraphindia.com
+  - news18.com
+  - fortuneindia.com
+  - forbesindia.com
+  - outlookindia.com
+  - thequint.com
+  # Indian startup, D2C and marketing trade press
+  - inc42.com
+  - yourstory.com
+  - entrackr.com
+  - the-ken.com
+  - afaqs.com
+  - exchange4media.com
+  - bestmediainfo.com
+  - retail.economictimes.indiatimes.com
+  # Government and regulators
+  - pib.gov.in
+  - cdsco.gov.in
+  - bis.gov.in
+  - mohfw.gov.in
+  - fssai.gov.in
+  - ascionline.in
+  - fda.gov
+  - who.int
+  - nih.gov
+  - europa.eu
+  # International wires and papers
+  - reuters.com
+  - apnews.com
+  - bbc.com
+  - bbc.co.uk
+  - theguardian.com
+  - nytimes.com
+  - ft.com
+  - bloomberg.com
+  - wsj.com
+  - cnbc.com
+  - economist.com
+  # Science
+  - nature.com
+  - science.org
+  - sciencedaily.com
+  - newscientist.com
+  - statnews.com
+  # Beauty and personal-care trade press
+  - cosmeticsdesign.com
+  - cosmeticsdesign-asia.com
+  - cosmeticsdesign-europe.com
+  - cosmeticsbusiness.com
+  - personalcaremagazine.com
+  - happi.com
+  - beautyindependent.com
+  - glossy.co
+  - voguebusiness.com
+  - businessoffashion.com
+  - wwd.com
+
+blocked:
+  # Market-research press releases and paid wires: not journalism, numbers are unverifiable
+  - grandviewresearch.com
+  - futuremarketinsights.com
+  - marketsandmarkets.com
+  - alliedmarketresearch.com
+  - imarcgroup.com
+  - mordorintelligence.com
+  - precedenceresearch.com
+  - fortunebusinessinsights.com
+  - researchandmarkets.com
+  - techsciresearch.com
+  - expertmarketresearch.com
+  - openpr.com
+  - einpresswire.com
+  - prnewswire.com
+  - globenewswire.com
+  - businesswire.com
+  - newswire.com
+  - medium.com
+  - linkedin.com

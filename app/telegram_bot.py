@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import time
 
 from telegram import (BotCommand, ForceReply, InlineKeyboardButton as Btn, InlineKeyboardMarkup as Kb,
-                      LinkPreviewOptions, Update)
+                      LinkPreviewOptions, ReplyParameters, Update)
 from telegram.constants import ChatMemberStatus
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler,
                           filters)
@@ -115,10 +115,12 @@ def split_text(text: str, limit: int = TG_LIMIT) -> list[str]:
     return chunks
 
 
-async def send(context, text: str, markup=None) -> int:
+async def send(context, text: str, markup=None, reply_to: int | None = None) -> int:
+    """Post to the review chat. reply_to threads the message under one of Meera's notes (single-chat mode)."""
     s = st(context)
+    kw = {"reply_parameters": ReplyParameters(message_id=reply_to, allow_sending_without_reply=True)} if reply_to else {}
     msg = await context.bot.send_message(s.settings.review_chat, text[:TG_LIMIT], reply_markup=markup,
-                                         link_preview_options=NO_PREVIEW)
+                                         link_preview_options=NO_PREVIEW, **kw)
     return msg.message_id
 
 
@@ -150,7 +152,39 @@ async def on_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if update.channel_post and msg.reply_to_message and text:
             if await handle_reply(update, context, msg.reply_to_message.message_id, text):
                 return
-    await capture.capture_message(msg, s.db, s.gemini, react=s.settings.capture_reaction)
+    nid = await capture.capture_message(msg, s.db, s.gemini, react=s.settings.capture_reaction)
+    if nid and update.channel_post and s.settings.auto_draft_on_capture and s.settings.review_chat:
+        await process_new_note(context, nid, reply_to=msg.message_id if s.settings.single_chat else None)
+
+
+async def process_new_note(context, nid: int, reply_to: int | None = None) -> None:
+    """The per-note pipeline from the components map: transcribe -> score 0-10 (reject low scores) ->
+    Google News hook -> draft in Meera's voice -> review gate. Meera still approves and posts herself."""
+    s = st(context)
+    row = s.db.note(nid)
+    if row is None:
+        return
+    if row["type"] == "voice" and not row["transcript"]:
+        await send(context, f"🎙 Saved note {nid}, but I couldn't transcribe the voice note yet. "
+                            "I'll retry and score it at the next shortlist run.", reply_to=reply_to)
+        return
+    try:
+        sc = await triage.score_note(s.db, s.gemini, s.settings, row)
+    except (GeminiAuthError, GeminiUnavailable) as e:
+        await send(context, f"Saved note {nid}. I couldn't score it right now ({e}); it will be included in the "
+                            "next shortlist, or send /triage later.", reply_to=reply_to)
+        return
+    if sc is None:
+        return
+    head = f"📝 Note {nid} · {sc.publishability}/10 · {sc.category}"
+    if sc.publishability < s.settings.min_shortlist_score:
+        why = sc.not_publishable_reason or sc.reason
+        await send(context, f"{head}\nNot drafting: {why}\n\nIt stays saved. Send /draft {nid} if you want a "
+                            "draft anyway.", reply_to=reply_to)
+        return
+    await send(context, f"{head}\nWhy: {sc.reason}\nGap: {sc.core_gap}\n\n"
+                        "Checking Google News for coverage from trusted publishers, then drafting…", reply_to=reply_to)
+    await start_draft(context, [nid], announce=False, reply_to=reply_to)
 
 
 async def run_channel_command(update: Update, context, text: str) -> None:
@@ -400,7 +434,7 @@ def cluster_for(s: State, note_id: int) -> list[int]:
     return ids
 
 
-async def start_draft(context, note_ids: list[int]) -> None:
+async def start_draft(context, note_ids: list[int], *, announce: bool = True, reply_to: int | None = None) -> None:
     s = st(context)
     key = f"note:{note_ids[0]}"
     if not s.db.try_lock(key):
@@ -410,7 +444,8 @@ async def start_draft(context, note_ids: list[int]) -> None:
         prev_status = {nid: s.db.note(nid)["status"] for nid in note_ids}
         s.db.set_note_status(note_ids, "drafting")
         merged = f" (merged with {', '.join(map(str, note_ids[1:]))})" if len(note_ids) > 1 else ""
-        await send(context, f"Drafting note {note_ids[0]}{merged}. Checking Google News for a current angle…")
+        if announce:
+            await send(context, f"Drafting note {note_ids[0]}{merged}. Checking Google News for a current angle…")
         try:
             req = drafting.start_request(s.db, note_ids)
             await news.find_angle(s.db, s.gemini, s.settings, req, drafting.notes_text(s.db, note_ids))
@@ -426,7 +461,7 @@ async def start_draft(context, note_ids: list[int]) -> None:
             return
     finally:
         s.db.unlock(key)
-    await deliver(context, draft_id)
+    await deliver(context, draft_id, reply_to=reply_to)
 
 
 def _restore(s: State, prev: dict[int, str]) -> None:
@@ -434,14 +469,15 @@ def _restore(s: State, prev: dict[int, str]) -> None:
         s.db.set_note_status([nid], "shortlisted" if status == "drafting" else status)
 
 
-async def deliver(context, draft_id: int) -> None:
+async def deliver(context, draft_id: int, reply_to: int | None = None) -> None:
     s = st(context)
     d = s.db.draft(draft_id)
     meta = json.loads(d["meta_json"] or "{}")
     lint = json.loads(d["lint_json"] or "{}")
     ids = []
     for chunk in split_text(d["post_text"]):
-        ids.append(await send(context, chunk))  # plain text, exactly as it would be pasted
+        # plain text, exactly as it would be pasted; the first part replies to Meera's note when we have it
+        ids.append(await send(context, chunk, reply_to=None if ids else reply_to))
     card_id = await send(context, card_text(s, d, meta, lint), draft_keyboard(draft_id))
     s.db.run("UPDATE drafts SET post_message_ids=?, card_message_id=?, delivered_at=? WHERE id=?",
              (json.dumps(ids), card_id, iso(), draft_id))
@@ -465,7 +501,10 @@ def card_text(s: State, d, meta: dict, lint: dict) -> str:
     if lint.get("soft"):
         lines.append("Warnings:\n- " + "\n- ".join(lint["soft"]))
     if item:
-        lines.append(f"🗞 News angle: {item['title']} ({item['source']}, {(item['published_at'] or '')[:10]})\n{item['link']}")
+        badge = {"trusted": "✅ trusted publisher", "unknown": "⚠️ publisher not on the trusted list"}.get(
+            item["credibility"] or "", "⚠️ publisher not checked")
+        lines.append(f"🗞 News hook: {item['title']}\n{item['source']} · {(item['published_at'] or '')[:10]} · {badge}\n"
+                     f"{item['link']}")
     elif req and req["news_status"] == "rss_failed":
         lines.append(f"🗞 No angle: {req['news_reason']}")
     else:
@@ -579,6 +618,10 @@ async def on_draft_action(update: Update, context, kind: str, draft_id: int, ext
         reminders = list(meta.get("verify_flags") or [])
         if item:
             reminders.append(f"Open the source before posting: {item['link']}")
+            # Voice skill §11.5: links go in the first comment, not the post body.
+            await send(context, "First comment (paste it under your LinkedIn post, so the source is one tap away):")
+            await send(context, f"Source: {item['title']}, {item['source']} "
+                                f"({(item['published_at'] or '')[:10]}). {item['link']}")
         tail = ("Before posting:\n- " + "\n- ".join(reminders) + "\n\n") if reminders else ""
         await send(context, tail + "After you post, send /final followed by what you actually posted "
                                    "(or reply 'final' + your text to the post above), so I can learn from your edits.")

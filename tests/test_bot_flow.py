@@ -18,9 +18,10 @@ class FakeBot:
         self.sent: list[dict] = []
         self._mid = 100
 
-    async def send_message(self, chat_id, text, reply_markup=None, link_preview_options=None):
+    async def send_message(self, chat_id, text, reply_markup=None, link_preview_options=None, reply_parameters=None):
         self._mid += 1
-        self.sent.append({"chat_id": chat_id, "text": text, "markup": reply_markup, "id": self._mid})
+        self.sent.append({"chat_id": chat_id, "text": text, "markup": reply_markup, "id": self._mid,
+                          "reply_to": reply_parameters.message_id if reply_parameters else None})
         return SimpleNamespace(message_id=self._mid)
 
 
@@ -38,6 +39,7 @@ def ctx(db, fake, settings, monkeypatch):
         db_.run("UPDATE draft_requests SET news_status='none', news_reason='No relevant item.', news_ranking='[]', "
                 "news_pos=-1 WHERE id=?", (req,))
     monkeypatch.setattr(news, "find_angle", no_news)
+    settings.review_chat_id = 42          # private-chat review mode for these tests
     state = tb.State(settings=settings, db=db, gemini=fake)
     app = SimpleNamespace(bot_data={"state": state})
     return SimpleNamespace(application=app, bot=FakeBot(), job_queue=FakeJobQueue(), args=[])
@@ -260,3 +262,69 @@ async def test_private_mode_channel_commands_are_just_notes(ctx, db):
     finally:
         tb.capture.capture_message = orig
     assert captured == ["/triage"]
+
+
+# ---- per-note pipeline (components map): score -> reject or draft with news hook -> review ------------
+@pytest.fixture
+def pipeline_ctx(channel_ctx, db, monkeypatch):
+    async def real_capture(msg, db_, gemini, react=False):
+        nid, _ = db_.upsert_note(source="telegram", chat_id=CHANNEL, message_id=msg.message_id, type_="text",
+                                 text=msg.text)
+        return nid
+    monkeypatch.setattr(tb.capture, "capture_message", real_capture)
+    return channel_ctx
+
+
+async def test_new_note_scored_high_is_drafted_under_the_note(pipeline_ctx, db, fake):
+    fake.queue("triage", {"scores": [score(1, 8)]})
+    fake.queue("draft", draft_json(GOOD_POST))
+    upd, _ = channel_post(pipeline_ctx, "Batch 14 pH dropped 0.4 units after the supplier changed the preservative.")
+    note_msg = upd.effective_message.message_id
+    await tb.on_channel_post(upd, pipeline_ctx)
+    sent = pipeline_ctx.bot.sent
+    assert sent[0]["text"].startswith("📝 Note 1 · 8/10") and sent[0]["reply_to"] == note_msg
+    assert any(m["text"] == GOOD_POST and m["reply_to"] == note_msg for m in sent)   # draft threads under the note
+    assert "Approve" in str(sent[-1]["markup"].inline_keyboard)
+    assert all(m["chat_id"] == CHANNEL for m in sent)
+    assert db.note(1)["status"] == "drafting"
+
+
+async def test_new_note_scored_low_is_rejected_with_reason(pipeline_ctx, db, fake):
+    s = score(1, 3)
+    s["not_publishable_reason"] = "Venting with no concrete anchor."
+    fake.queue("triage", {"scores": [s]})
+    upd, _ = channel_post(pipeline_ctx, "ugh long day")
+    await tb.on_channel_post(upd, pipeline_ctx)
+    sent = pipeline_ctx.bot.sent
+    assert len(sent) == 1 and "Not drafting: Venting with no concrete anchor." in sent[0]["text"]
+    assert "/draft 1" in sent[0]["text"]
+    assert db.one("SELECT COUNT(*) c FROM drafts")["c"] == 0
+
+
+async def test_edits_and_commands_do_not_trigger_the_pipeline(pipeline_ctx, db, fake):
+    upd, _ = channel_post(pipeline_ctx, "An idea about CoA baselines")
+    upd.edited_channel_post, upd.channel_post = upd.channel_post, None
+    await tb.on_channel_post(upd, pipeline_ctx)
+    assert pipeline_ctx.bot.sent == [] and fake.calls == []
+
+
+async def test_approve_with_news_hook_gives_first_comment_source(pipeline_ctx, db, fake, monkeypatch):
+    async def with_news(db_, gemini, settings_, req, text):
+        iid = db_.run("INSERT INTO news_items(draft_request_id, query, title, source, link, published_at, snippet, "
+                      "source_domain, credibility, chosen) VALUES (?,?,?,?,?,?,?,?,?,1)",
+                      (req, "q", "CDSCO flags creams over heavy metals", "The Times of India",
+                       "https://news.example/1", "2026-09-16T00:00:00+00:00", "snippet",
+                       "timesofindia.indiatimes.com", "trusted"))
+        db_.run("UPDATE draft_requests SET news_status='ok', news_reason='fits', news_ranking=?, news_pos=0 WHERE id=?",
+                (json.dumps([iid]), req))
+    monkeypatch.setattr(news, "find_angle", with_news)
+    fake.queue("draft", draft_json(GOOD_POST))
+    nid = add_notes(db, 1)[0]
+    await tb.start_draft(pipeline_ctx, [nid])
+    card = pipeline_ctx.bot.sent[-1]["text"]
+    assert "✅ trusted publisher" in card and "The Times of India" in card
+    did = db.one("SELECT id FROM drafts")["id"]
+    await tb.on_callback(cb_update(f"a:{did}"), pipeline_ctx)
+    texts = [m["text"] for m in pipeline_ctx.bot.sent]
+    assert any(t.startswith("Source: CDSCO flags creams over heavy metals, The Times of India") for t in texts)
+    assert GOOD_POST in texts and "https://news.example/1" not in GOOD_POST

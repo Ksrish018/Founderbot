@@ -46,7 +46,7 @@ async def test_none_is_a_valid_outcome(db, fake, settings, monkeypatch):
     fake.queue("news_queries", {"queries": ["weather Mumbai"]})
     fake.queue("angle", {"ranked_indices": [], "reason": "No item relates to preservative changes."})
 
-    async def fake_fetch(queries, days, timeout=15.0):
+    async def fake_fetch(queries, days, timeout=15.0, **kw):
         return news.parse_feed(rss([("Mumbai rain alert", "X", datetime.now(timezone.utc))]), queries[0])
     monkeypatch.setattr(news, "fetch", fake_fetch)
 
@@ -73,7 +73,7 @@ async def test_ranking_advance_and_drop(db, fake, settings, monkeypatch):
     fake.queue("news_queries", {"queries": ["q"]})
     fake.queue("angle", {"ranked_indices": [1, 0, 7], "reason": "Item 1 is about CoA checks."})
 
-    async def fake_fetch(queries, days, timeout=15.0):
+    async def fake_fetch(queries, days, timeout=15.0, **kw):
         now = datetime.now(timezone.utc)
         return news.parse_feed(rss([("First", "A", now), ("Second", "B", now - timedelta(hours=1))]), "q")
     monkeypatch.setattr(news, "fetch", fake_fetch)
@@ -84,3 +84,24 @@ async def test_ranking_advance_and_drop(db, fake, settings, monkeypatch):
     assert not news.advance(db, req)
     news.drop(db, req)
     assert news.current_item(db, req) is None
+
+
+
+def test_trusted_publishers_first_blocked_never():
+    items = news.parse_feed(rss([
+        ("India Niacinamide Market Size", "grandviewresearch.com", NOW - timedelta(days=1)),       # blocked
+        ("Best niacinamide serums", "somelisticle.example", NOW - timedelta(days=1)),              # unknown
+        ("CDSCO flags two creams", "timesofindia.indiatimes.com", NOW - timedelta(days=5)),       # trusted
+    ]), "q")
+    assert [i.credibility for i in items] == ["blocked", "unknown", "trusted"]
+    open_mode = news.filter_items(items, 14, now=NOW)
+    assert [i.title for i in open_mode] == ["CDSCO flags two creams", "Best niacinamide serums"]
+    strict = news.filter_items(items, 14, now=NOW, trusted_only=True)
+    assert [i.title for i in strict] == ["CDSCO flags two creams"]
+
+
+def test_classify_matches_subdomains_only_on_dot_boundary():
+    assert news.classify("economictimes.indiatimes.com") == "trusted"
+    assert news.classify("www.reuters.com") == "trusted"
+    assert news.classify("notreuters.com") == "unknown"
+    assert news.classify("") == "unknown"

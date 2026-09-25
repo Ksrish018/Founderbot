@@ -98,35 +98,56 @@ If `gemini_error` appears, the key is wrong or the model isn't available to it. 
    The bot replies with her numeric user ID.
 2. In Vercel: **Settings → Environment Variables** → add `MEERA_USER_ID` = that number → **Save**.
 3. **Redeploy** again (Deployments → ⋯ → Redeploy).
-4. Send `/health` to the bot. Every line should be ✅. Then try `/triage`.
+4. Post `/health` in Meera's Content Capture. Every line should be ✅. Then post a real idea as a note.
 
-From now on the bot answers only Meera, and posting a note in the channel is all she needs to do.
+From now on the bot answers only Meera. Posting a note in **Meera's Content Capture** is all she needs to do; the
+score, the draft and the review buttons arrive in the same channel, as replies under her note.
 
 ---
 
-## Single-chat mode: everything in Meera's Content Capture
+## How it works in Meera's Content Capture (one chat)
 
-By default, notes go in the channel and the bot talks to Meera in a private chat. To have everything in the
-channel instead, add this in Vercel and redeploy:
+Everything happens in the channel, following the Case 1 components map:
 
-| Key | Value |
+```
+Meera drops a note  ->  Telegram receives it (voice is transcribed)  ->  Gemini scores it 0-10
+   -> score below 6: the bot replies "Not drafting: <reason>" under the note
+   -> score 6 or more: Google News RSS is searched for coverage from trusted publishers
+                       -> Gemini drafts the post in Meera's voice (+ news hook if one genuinely fits)
+                       -> draft + review card arrive as a reply under her note
+   -> Meera reviews: Approve / Revise / Regenerate / Change angle / No news / Reject
+   -> Approve: copy-ready post + a "first comment" with the source link. She posts on LinkedIn herself.
+```
+
+| Meera posts in the channel | What happens |
 |---|---|
-| `REVIEW_CHAT_ID` | `-1003976391640` (the notes channel's ID) |
-
-Then, in **Meera's Content Capture**:
-
-| Meera posts | What happens |
-|---|---|
-| A normal message or voice note | Saved as a note, silently |
-| `/triage`, `/stats`, `/notes`, `/facts`, `/health`, `/help` | Runs the command; the bot answers in the channel |
+| A normal message or voice note | Saved, scored straight away, and either rejected with a reason or drafted (about 1 minute) |
+| `/triage`, `/stats`, `/notes`, `/draft 7`, `/facts`, `/health`, `/help` | Runs the command; the bot answers in the channel |
 | A **reply** to a draft | Revises that draft, using the reply as the instruction |
 | A **reply** to a draft starting with `final` | Records what she actually posted |
 | A **reply** to one of the bot's questions (after tapping Revise, or in `/facts`) | Answers the question |
-| Taps a button (Draft this, Approve, …) | Only works for the account in `MEERA_USER_ID` |
+| Taps a button (Approve, Revise, …) | Only works for the account in `MEERA_USER_ID` |
 
-Shortlists and drafts appear in the channel between her notes. The bot trusts every post in the channel as
-Meera's, because only channel admins can post. Keep the channel's admins to Meera and the bot. To go back to the
-private chat, delete `REVIEW_CHAT_ID` and redeploy.
+**Verified sources.** News hooks come only from Google News RSS, and by default only from publishers listed as
+trusted in `config/news_sources.yaml` (Indian national and business press, regulators such as CDSCO and PIB,
+Reuters/BBC, science journals, beauty trade press). Market-research press releases and paid wires are always
+blocked. The draft may only use what the headline and snippet say, names the publisher in the post, and the review
+card shows the link so Meera can open it before posting. If no trusted story genuinely fits, the draft has no hook:
+a forced, irrelevant hook would cost her more credibility than it adds.
+
+The bot trusts every post in the channel as Meera's, because only channel admins can post. Keep the channel's
+admins to Meera and the bot.
+
+**Optional settings** (Vercel → Environment Variables, then redeploy):
+
+| Key | Default | Effect |
+|---|---|---|
+| `MIN_SHORTLIST_SCORE` | `6` | Notes below this score are rejected instead of drafted |
+| `AUTO_DRAFT_ON_CAPTURE` | `true` | `false` = don't score each note on arrival; only the Mon/Wed/Fri shortlist |
+| `NEWS_TRUSTED_ONLY` | `true` | `false` = also allow publishers not on the trusted list (flagged ⚠️ on the card) |
+| `NEWS_LOOKBACK_DAYS` / `NEWS_MAX_LOOKBACK_DAYS` | `30` / `60` | How recent a news item must be |
+| `REVIEW_CHAT_ID` | the notes channel | Set to Meera's user ID to review in a private chat with the bot instead |
+
 
 ## How the schedule works on Vercel
 

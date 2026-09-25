@@ -10,7 +10,7 @@ from . import facts
 from .config import Settings
 from .db import DB
 from .gemini_client import Gemini
-from .schemas import TriageBatch, system_for
+from .schemas import NoteScore, TriageBatch, system_for
 
 log = logging.getLogger(__name__)
 BATCH_SIZE = 15
@@ -44,12 +44,21 @@ def build_prompt(db: DB, rows: list) -> str:
 
 
 async def score_pending(db: DB, gemini: Gemini, settings: Settings) -> int:
-    rows = pending_notes(db)
+    return len(await score_rows(db, gemini, settings, pending_notes(db)))
+
+
+async def score_note(db: DB, gemini: Gemini, settings: Settings, row) -> NoteScore | None:
+    """Score one freshly captured note (the per-note pipeline)."""
+    res = await score_rows(db, gemini, settings, [row])
+    return res[0] if res else None
+
+
+async def score_rows(db: DB, gemini: Gemini, settings: Settings, rows: list) -> list[NoteScore]:
     if not rows:
-        return 0
+        return []
     system, version = system_for("triage")
     run_id = uuid.uuid4().hex[:8]
-    scored = 0
+    scored: list[NoteScore] = []
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i:i + BATCH_SIZE]
         ids = {r["id"] for r in batch}
@@ -63,8 +72,8 @@ async def score_pending(db: DB, gemini: Gemini, settings: Settings) -> int:
             d["risk_flags"] = [f for f in s.risk_flags if f != "none"]
             db.add_score(run_id, res.model, d)
             db.set_note_status([s.note_id], "unpublishable" if s.publishability <= 3 else "scored")
-            scored += 1
-    db.event("triage_scored", run_id=run_id, count=scored, prompt_version=version)
+            scored.append(s)
+    db.event("triage_scored", run_id=run_id, count=len(scored), prompt_version=version)
     return scored
 
 
