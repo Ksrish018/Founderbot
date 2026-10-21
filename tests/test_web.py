@@ -1,6 +1,12 @@
 """Web dashboard API: login, feed, capture -> score -> draft, approve / reject / revise. Telegram and Gemini are faked."""
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -35,9 +41,41 @@ def login(c):
     assert r.status_code == 200
 
 
-def test_feed_requires_login(client):
-    assert client.get("/api/web/feed").status_code == 401
+def test_feed_is_a_read_only_demo_without_login(client):
+    r = client.get("/api/web/feed")
+    assert r.status_code == 200 and r.json()["demo"] is True
+    assert r.json()["config"]["channel"] is None
     assert client.post("/api/web/notes", json={"text": "x"}).status_code == 401
+    assert client.post("/api/web/notes/1/draft").status_code == 401
+    assert client.post("/api/web/drafts/1/approve", json={}).status_code == 401
+    login(client)
+    assert client.get("/api/web/feed").json()["demo"] is False
+
+
+def _pass(secret, app, exp_ms):
+    enc = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+    payload = enc(json.dumps({"app": app, "email": "visitor@example.com", "exp": exp_ms}).encode())
+    return payload + "." + enc(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
+
+
+def test_access_link_grants_a_session_until_it_expires(client, settings):
+    settings.access_secret = "shared"
+    exp = int(time.time() * 1000) + 3_600_000
+    r = client.get("/api/web/access", params={"pass": _pass("shared", "founderbot", exp)}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert client.get("/api/web/feed").json()["demo"] is False
+
+
+def test_access_link_rejects_bad_links(client, settings):
+    settings.access_secret = "shared"
+    later = int(time.time() * 1000) + 3_600_000
+    for token in (_pass("shared", "founderbot", int(time.time() * 1000) - 1),   # expired
+                  _pass("shared", "funding-radar", later),                      # another app
+                  _pass("other", "founderbot", later),                          # wrong secret
+                  "garbage"):
+        r = client.get("/api/web/access", params={"pass": token}, follow_redirects=False)
+        assert r.status_code == 403
+    assert client.get("/api/web/feed").json()["demo"] is True
 
 
 def test_wrong_password_rejected(client):
@@ -46,7 +84,8 @@ def test_wrong_password_rejected(client):
 
 def test_forged_cookie_rejected(client):
     client.cookies.set(web.COOKIE, "9999999999.deadbeef")
-    assert client.get("/api/web/feed").status_code == 401
+    assert client.get("/api/web/feed").json()["demo"] is True
+    assert client.post("/api/web/notes", json={"text": "x"}).status_code == 401
 
 
 def test_capture_strong_note_drafts_it(client):

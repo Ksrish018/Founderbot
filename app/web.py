@@ -5,6 +5,7 @@ channel and the dashboard stay in sync. Access is protected by DASHBOARD_PASSWOR
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -14,7 +15,8 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Callable
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from . import drafting, metrics, telegram_bot as tb
@@ -42,6 +44,35 @@ def _valid(settings: Settings, token: str | None) -> bool:
         return False
     exp, _, _ = token.partition(".")
     return exp.isdigit() and int(exp) > time.time() and hmac.compare_digest(token, _sign(settings, int(exp)))
+
+
+def _b64url(raw: str) -> bytes:
+    return base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+
+
+def verify_pass(secret: str, token: str | None, app: str = "founderbot") -> int | None:
+    """Checks a portfolio access link (base64url JSON payload + HMAC-SHA256). Returns its expiry in seconds, or None."""
+    if not secret or not token or "." not in token:
+        return None
+    payload, _, sig = token.partition(".")
+    try:
+        want = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
+        if not hmac.compare_digest(want, _b64url(sig)):
+            return None
+        data = json.loads(_b64url(payload))
+    except (ValueError, TypeError):
+        return None
+    exp = data.get("exp")
+    if data.get("app") != app or not isinstance(exp, (int, float)) or exp <= time.time() * 1000:
+        return None
+    return int(exp // 1000)
+
+
+DEMO_REQUEST_URL = "https://srish-kulkarni.vercel.app/access?app=founderbot"
+EXPIRED_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link expired</title><style>body{font:16px/1.55 system-ui,sans-serif;background:#f6f4ef;color:#1d2220;display:grid;place-items:center;min-height:100vh;margin:0;padding:16px}
+main{max-width:420px}a{color:#1f5f5b}</style></head><body><main><h1>This access link has expired</h1>
+<p><a href="/">Explore the read-only demo</a> or <a href="%s">request a new link</a>.</p></main></body></html>""" % DEMO_REQUEST_URL
 
 
 # ---- Telegram mirroring ---------------------------------------------------------------
@@ -153,7 +184,7 @@ def build_router(get_settings: Callable[[], Settings], get_db: Callable[[], DB],
 
     def auth(request: Request) -> None:
         if not _valid(get_settings(), request.cookies.get(COOKIE)):
-            raise HTTPException(401, "Please log in")
+            raise HTTPException(401, "This is a read-only demo. Request full access to try this action.")
 
     @asynccontextmanager
     async def bot_context() -> AsyncIterator[SimpleNamespace]:
@@ -187,10 +218,23 @@ def build_router(get_settings: Callable[[], Settings], get_db: Callable[[], DB],
         response.delete_cookie(COOKIE, path="/")
         return {"ok": True}
 
+    @r.get("/access")
+    def access(request: Request, pass_: str | None = Query(None, alias="pass")):
+        """Personal access link from the portfolio: a session that ends when the link does."""
+        settings = get_settings()
+        exp = verify_pass(settings.access_secret, pass_)
+        if exp is None or not _password(settings):
+            return HTMLResponse(EXPIRED_PAGE, status_code=403)
+        res = RedirectResponse("/", status_code=303)
+        res.set_cookie(COOKIE, _sign(settings, exp), max_age=max(1, exp - int(time.time())), httponly=True,
+                       secure=settings.web_secure_cookie, samesite="lax", path="/")
+        return res
+
     @r.get("/feed")
     def feed(request: Request, limit: int = 40):
-        auth(request)
+        """Signed in: the full feed. Otherwise a read-only demo of the same feed; every write still needs a session."""
         db, settings = get_db(), get_settings()
+        demo = not _valid(settings, request.cookies.get(COOKIE))
         notes = db.q("SELECT * FROM notes ORDER BY id DESC LIMIT ?", (max(1, min(limit, 100)),))
         s = metrics.compute(db, settings)
         return {
@@ -200,9 +244,11 @@ def build_router(get_settings: Callable[[], Settings], get_db: Callable[[], DB],
                       "median_review_min": s["median_review_min"], "light_edit_share": s["light_edit_share"],
                       "total_cost": s["total_cost"]},
             "config": {"min_score": settings.min_shortlist_score, "trusted_only": settings.news_trusted_only,
-                       "channel": settings.telegram_notes_chat_id,
+                       "channel": None if demo else settings.telegram_notes_chat_id,
                        "mirror": bool(settings.telegram_bot_token and settings.web_mirror_telegram)},
             "server_time": iso(),
+            "demo": demo,
+            "request_access": DEMO_REQUEST_URL if demo else None,
         }
 
     @r.post("/notes")

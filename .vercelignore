@@ -4,3 +4,6 @@ data/app.db-*
 tests/
 .pytest_cache/
 __pycache__/
+backups/
+.venv/
+.env.local

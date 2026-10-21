@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     web_mirror_telegram: bool = True
     # Secure (https-only) session cookie. Only set false for local http previews.
     web_secure_cookie: bool = True
+    # Shared with the portfolio site, which signs 7-day access links for approved visitors.
+    access_secret: str = ""
     log_level: str = "INFO"
     draft_temperature: float = 0.7
     triage_temperature: float = 0.2

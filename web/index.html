@@ -116,6 +116,12 @@ h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spa
 .login input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); outline: none; margin-bottom: 12px; }
 .login .btn { width: 100%; padding: 11px; }
 .hidden { display: none !important; }
+.demobar { display: none; background: var(--ink); color: var(--bg); font-size: 13px; }
+.demobar div { max-width: 860px; margin: 0 auto; padding: 8px 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.demobar a, .demobar button { color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+.demobar span[aria-hidden] { opacity: .5; }
+body.demo .demobar { display: block; }
+body.demo #composer, body.demo .actions, body.demo .inline, body.demo [data-draft], body.demo #logoutBtn { display: none !important; }
 .iconbtn { white-space: nowrap; }
 @media (max-width: 640px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
@@ -139,10 +145,14 @@ h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spa
     <input id="password" type="password" autocomplete="current-password" placeholder="Password" required>
     <button class="btn primary" type="submit">Log in</button>
     <p id="loginError" class="hint" style="color:var(--bad);margin:12px 0 0"></p>
+    <p class="hint" style="margin:14px 0 0"><button type="button" class="linkish" id="demoBtn">Explore the read-only demo</button></p>
   </form>
 </section>
 
 <section id="app" class="hidden">
+  <div class="demobar" role="note"><div><strong>Read-only demo</strong><span aria-hidden="true">·</span>
+    <a href="https://srish-kulkarni.vercel.app/access?app=founderbot">Request full access</a><span aria-hidden="true">·</span>
+    <button type="button" id="ownerBtn">Owner sign-in</button></div></div>
   <header class="top">
     <div class="bar">
       <div class="brand">
@@ -204,8 +214,8 @@ h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spa
       headers: opts.body ? { "Content-Type": "application/json" } : {},
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
-    if (res.status === 401 && path !== "/login") { show("login"); throw new Error("Please log in"); }
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && path !== "/login" && !(state.data && state.data.demo)) { show("login"); throw new Error("Please log in"); }
     if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
     return data;
   }
@@ -225,7 +235,9 @@ h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spa
       show("app"); load();
     } catch (err) { $("#loginError").textContent = err.message; }
   };
-  $("#logoutBtn").onclick = async () => { await api("/logout", { method: "POST" }).catch(() => {}); show("login"); };
+  $("#logoutBtn").onclick = async () => { await api("/logout", { method: "POST" }).catch(() => {}); load(); };
+  $("#ownerBtn").onclick = () => show("login");
+  $("#demoBtn").onclick = () => { show("app"); if (!state.data) load(); };
   $("#refreshBtn").onclick = () => load(true);
 
   // ---- data ----
@@ -344,6 +356,7 @@ h2.section { font: 600 13px/1 var(--sans); text-transform: uppercase; letter-spa
   }
 
   function render() {
+    document.body.classList.toggle("demo", !!state.data.demo);
     renderStats();
     const notes = state.data.notes;
     $("#feed").innerHTML = notes.length ? notes.map(noteCard).join("")
